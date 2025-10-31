@@ -20,7 +20,8 @@
     "lint:all": "backstage-cli repo lint",
     "prettier:check": "prettier --check .",
     "prettier:fix": "prettier --ignore-unknown --write .",
-    "new": "backstage-cli new"
+    "new": "backstage-cli new",
+    "prepare": "husky"
   },
   "workspaces": {
     "packages": [
