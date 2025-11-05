@@ -36,7 +36,6 @@ auth:
   providers:
     guest: {}
 
-
 catalog:
   import:
     entityFilename: catalog-info.yaml

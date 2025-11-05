@@ -1,5 +1,5 @@
 {
-  "name": "@internal/backstage-plugin-c4",
+  "name": "@internal/c4",
   "version": "1.0.0",
   "private": true,
   "engines": {
