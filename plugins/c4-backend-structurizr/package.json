@@ -1,0 +1,39 @@
+{
+  "name": "@fulgas/plugin-c4-backend-structurizr",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "backstage": {
+    "role": "backend-library"
+  },
+  "scripts": {
+    "build": "backstage-cli package build",
+    "lint": "backstage-cli package lint",
+    "test": "backstage-cli package test",
+    "tsc": "tsc --noEmit",
+    "clean": "backstage-cli package clean",
+    "generate": "cd src/grammar && antlr4ng -Dlanguage=TypeScript -visitor -no-listener -o generated StructurizrDSL.g4"
+  },
+  "dependencies": {
+    "@backstage/backend-common": "^0.21.0",
+    "@backstage/backend-plugin-api": "^1.9.0",
+    "@backstage/catalog-client": "^1.15.0",
+    "@backstage/catalog-model": "^1.8.0",
+    "@fulgas/plugin-c4-backend": "^0.1.0",
+    "@fulgas/plugin-c4-node": "^0.1.0",
+    "antlr4ng": "^3.0.16",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@backstage/cli": "^0.36.1",
+    "@types/uuid": "^9.0.0",
+    "antlr4ng-cli": "^2.0.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

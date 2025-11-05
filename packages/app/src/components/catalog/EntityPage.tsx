@@ -1,4 +1,14 @@
-import { Button, Grid } from '@material-ui/core';
+import {
+  RELATION_API_CONSUMED_BY,
+  RELATION_API_PROVIDED_BY,
+  RELATION_CONSUMES_API,
+  RELATION_DEPENDENCY_OF,
+  RELATION_DEPENDS_ON,
+  RELATION_HAS_PART,
+  RELATION_PART_OF,
+  RELATION_PROVIDES_API,
+} from '@backstage/catalog-model';
+import { EmptyState } from '@backstage/core-components';
 import {
   EntityApiDefinitionCard,
   EntityConsumedApisCard,
@@ -17,46 +27,35 @@ import {
   EntityHasSystemsCard,
   EntityLayout,
   EntityLinksCard,
-  EntitySwitch,
   EntityOrphanWarning,
   EntityProcessingErrorsPanel,
+  EntityRelationWarning,
+  EntitySwitch,
+  hasCatalogProcessingErrors,
+  hasRelationWarnings,
   isComponentType,
   isKind,
-  hasCatalogProcessingErrors,
   isOrphan,
-  hasRelationWarnings,
-  EntityRelationWarning,
 } from '@backstage/plugin-catalog';
-import {
-  EntityUserProfileCard,
-  EntityGroupProfileCard,
-  EntityMembersListCard,
-  EntityOwnershipCard,
-} from '@backstage/plugin-org';
-import { EntityTechdocsContent } from '@backstage/plugin-techdocs';
-import { EmptyState } from '@backstage/core-components';
 import {
   Direction,
   EntityCatalogGraphCard,
 } from '@backstage/plugin-catalog-graph';
 import {
-  RELATION_API_CONSUMED_BY,
-  RELATION_API_PROVIDED_BY,
-  RELATION_CONSUMES_API,
-  RELATION_DEPENDENCY_OF,
-  RELATION_DEPENDS_ON,
-  RELATION_HAS_PART,
-  RELATION_PART_OF,
-  RELATION_PROVIDES_API,
-} from '@backstage/catalog-model';
-
-import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
-import { ReportIssue } from '@backstage/plugin-techdocs-module-addons-contrib';
-
-import {
   EntityKubernetesContent,
   isKubernetesAvailable,
 } from '@backstage/plugin-kubernetes';
+import {
+  EntityGroupProfileCard,
+  EntityMembersListCard,
+  EntityOwnershipCard,
+  EntityUserProfileCard,
+} from '@backstage/plugin-org';
+import { EntityTechdocsContent } from '@backstage/plugin-techdocs';
+import { ReportIssue } from '@backstage/plugin-techdocs-module-addons-contrib';
+import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
+import { Button, Grid } from '@material-ui/core';
+import { EntityC4Tab, EntityC4Card, isC4SupportedEntity } from '@fulgas/plugin-c4-frontend-legacy';
 
 const techdocsContent = (
   <EntityTechdocsContent>
@@ -128,17 +127,20 @@ const overviewContent = (
   <Grid container spacing={3} alignItems="stretch">
     {entityWarningContent}
     <Grid item md={6}>
-      <EntityAboutCard variant="gridItem" />
+      <EntityAboutCard />
     </Grid>
     <Grid item md={6} xs={12}>
-      <EntityCatalogGraphCard variant="gridItem" height={400} />
+      <EntityCatalogGraphCard height={400} />
     </Grid>
 
     <Grid item md={4} xs={12}>
       <EntityLinksCard />
     </Grid>
     <Grid item md={8} xs={12}>
-      <EntityHasSubcomponentsCard variant="gridItem" />
+      <EntityHasSubcomponentsCard />
+    </Grid>
+    <Grid item md={6} xs={12}>
+      <EntityC4Card />
     </Grid>
   </Grid>
 );
@@ -175,16 +177,20 @@ const serviceEntityPage = (
     <EntityLayout.Route path="/dependencies" title="Dependencies">
       <Grid container spacing={3} alignItems="stretch">
         <Grid item md={6}>
-          <EntityDependsOnComponentsCard variant="gridItem" />
+          <EntityDependsOnComponentsCard />
         </Grid>
         <Grid item md={6}>
-          <EntityDependsOnResourcesCard variant="gridItem" />
+          <EntityDependsOnResourcesCard />
         </Grid>
       </Grid>
     </EntityLayout.Route>
 
     <EntityLayout.Route path="/docs" title="Docs">
       {techdocsContent}
+    </EntityLayout.Route>
+
+    <EntityLayout.Route path="/c4" title="C4 Architecture" if={isC4SupportedEntity}>
+      <EntityC4Tab />
     </EntityLayout.Route>
   </EntityLayout>
 );
@@ -210,16 +216,20 @@ const websiteEntityPage = (
     <EntityLayout.Route path="/dependencies" title="Dependencies">
       <Grid container spacing={3} alignItems="stretch">
         <Grid item md={6}>
-          <EntityDependsOnComponentsCard variant="gridItem" />
+          <EntityDependsOnComponentsCard />
         </Grid>
         <Grid item md={6}>
-          <EntityDependsOnResourcesCard variant="gridItem" />
+          <EntityDependsOnResourcesCard />
         </Grid>
       </Grid>
     </EntityLayout.Route>
 
     <EntityLayout.Route path="/docs" title="Docs">
       {techdocsContent}
+    </EntityLayout.Route>
+
+    <EntityLayout.Route path="/c4" title="C4 Architecture" if={isC4SupportedEntity}>
+      <EntityC4Tab />
     </EntityLayout.Route>
   </EntityLayout>
 );
@@ -266,7 +276,7 @@ const apiPage = (
           <EntityAboutCard />
         </Grid>
         <Grid item md={6} xs={12}>
-          <EntityCatalogGraphCard variant="gridItem" height={400} />
+          <EntityCatalogGraphCard height={400} />
         </Grid>
         <Grid item md={4} xs={12}>
           <EntityLinksCard />
@@ -298,10 +308,10 @@ const userPage = (
       <Grid container spacing={3}>
         {entityWarningContent}
         <Grid item xs={12} md={6}>
-          <EntityUserProfileCard variant="gridItem" />
+          <EntityUserProfileCard />
         </Grid>
         <Grid item xs={12} md={6}>
-          <EntityOwnershipCard variant="gridItem" />
+          <EntityOwnershipCard />
         </Grid>
       </Grid>
     </EntityLayout.Route>
@@ -314,10 +324,10 @@ const groupPage = (
       <Grid container spacing={3}>
         {entityWarningContent}
         <Grid item xs={12} md={6}>
-          <EntityGroupProfileCard variant="gridItem" />
+          <EntityGroupProfileCard />
         </Grid>
         <Grid item xs={12} md={6}>
-          <EntityOwnershipCard variant="gridItem" />
+          <EntityOwnershipCard />
         </Grid>
         <Grid item xs={12} md={6}>
           <EntityMembersListCard />
@@ -336,28 +346,27 @@ const systemPage = (
       <Grid container spacing={3} alignItems="stretch">
         {entityWarningContent}
         <Grid item md={6}>
-          <EntityAboutCard variant="gridItem" />
+          <EntityAboutCard />
         </Grid>
         <Grid item md={6} xs={12}>
-          <EntityCatalogGraphCard variant="gridItem" height={400} />
+          <EntityCatalogGraphCard height={400} />
         </Grid>
         <Grid item md={4} xs={12}>
           <EntityLinksCard />
         </Grid>
         <Grid item md={8}>
-          <EntityHasComponentsCard variant="gridItem" />
+          <EntityHasComponentsCard />
         </Grid>
         <Grid item md={6}>
-          <EntityHasApisCard variant="gridItem" />
+          <EntityHasApisCard />
         </Grid>
         <Grid item md={6}>
-          <EntityHasResourcesCard variant="gridItem" />
+          <EntityHasResourcesCard />
         </Grid>
       </Grid>
     </EntityLayout.Route>
     <EntityLayout.Route path="/diagram" title="Diagram">
       <EntityCatalogGraphCard
-        variant="gridItem"
         direction={Direction.TOP_BOTTOM}
         title="System Diagram"
         height={700}
@@ -374,6 +383,10 @@ const systemPage = (
         unidirectional={false}
       />
     </EntityLayout.Route>
+
+    <EntityLayout.Route path="/c4" title="C4 Architecture" if={isC4SupportedEntity}>
+      <EntityC4Tab />
+    </EntityLayout.Route>
   </EntityLayout>
 );
 
@@ -383,15 +396,19 @@ const domainPage = (
       <Grid container spacing={3} alignItems="stretch">
         {entityWarningContent}
         <Grid item md={6}>
-          <EntityAboutCard variant="gridItem" />
+          <EntityAboutCard />
         </Grid>
         <Grid item md={6} xs={12}>
-          <EntityCatalogGraphCard variant="gridItem" height={400} />
+          <EntityCatalogGraphCard height={400} />
         </Grid>
         <Grid item md={6}>
-          <EntityHasSystemsCard variant="gridItem" />
+          <EntityHasSystemsCard />
         </Grid>
       </Grid>
+    </EntityLayout.Route>
+
+    <EntityLayout.Route path="/c4" title="C4 Architecture" if={isC4SupportedEntity}>
+      <EntityC4Tab />
     </EntityLayout.Route>
   </EntityLayout>
 );

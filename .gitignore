@@ -34,6 +34,9 @@ node_modules/
 dist
 dist-types
 
+# ANTLR generated files (regenerated in CI)
+plugins/c4-backend-structurizr/src/grammar/generated/
+
 # Temporary change files created by Vim
 *.swp
 
@@ -57,3 +60,4 @@ e2e-test-report/
 
 .idea/
 .yarn/install-state.gz
+.superpowers/

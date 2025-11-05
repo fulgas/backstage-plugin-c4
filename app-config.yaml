@@ -20,11 +20,6 @@ backend:
     client: better-sqlite3
     connection: ':memory:'
 
-integrations:
-  github:
-    - host: github.com
-      token: ${GITHUB_TOKEN}
-
 techdocs:
   builder: 'local'
   generator:
@@ -36,13 +31,12 @@ auth:
   providers:
     guest: {}
 
-
 catalog:
   import:
     entityFilename: catalog-info.yaml
     pullRequestBranchName: backstage-integration
   rules:
-    - allow: [Component, System, API, Resource, Location]
+    - allow: [Component, System, Domain, API, Resource, Location]
   locations:
     # Local example data, file locations are relative to the backend process, typically `packages/backend`
     - type: file
@@ -59,3 +53,15 @@ catalog:
       target: ../../examples/org.yaml
       rules:
         - allow: [User, Group]
+
+c4:
+  schedule:
+    frequency:
+      minutes: 5
+    timeout:
+      minutes: 3
+    initialDelay:
+      seconds: 15
+  dsl:
+    annotation: c4/structurizr-path
+    conventionPath: c4-model.dsl

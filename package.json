@@ -1,5 +1,5 @@
 {
-  "name": "@internal/backstage-plugin-c4",
+  "name": "@internal/c4",
   "version": "1.0.0",
   "private": true,
   "engines": {
@@ -30,10 +30,14 @@
     ]
   },
   "devDependencies": {
-    "@backstage/cli": "^0.34.4",
-    "@backstage/e2e-test-utils": "^0.1.1",
+    "@backstage/cli": "^0.36.1",
+    "@backstage/cli-defaults": "^0.1.1",
+    "@backstage/e2e-test-utils": "^0.1.2",
     "@ianvs/prettier-plugin-sort-imports": "^4.4.0",
+    "@types/jest": "^29.0.0",
     "husky": "^9.0.11",
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0",
     "lint-staged": "^16.0.0",
     "node-gyp": "^10.0.0",
     "prettier": "^2.3.2",

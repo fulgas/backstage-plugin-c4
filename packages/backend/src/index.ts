@@ -63,4 +63,7 @@ backend.add(import('@backstage/plugin-kubernetes-backend'));
 backend.add(import('@backstage/plugin-notifications-backend'));
 backend.add(import('@backstage/plugin-signals-backend'));
 
+backend.add(import('@fulgas/plugin-c4-backend'));
+backend.add(import('@fulgas/plugin-c4-backend-structurizr'));
+
 backend.start();
