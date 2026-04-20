@@ -109,6 +109,11 @@ export interface C4ViewDescriptor {
    * Its `depth` determines the diagram level.
    */
   subjectId: string;
+  /**
+   * Diagram level derived from the subject node's depth at read time.
+   * Not stored in the DB — computed via join with `c4_nodes`.
+   */
+  level: C4DiagramLevel;
   /** The Backstage entity that "owns" this diagram (used for entity page lookup). */
   entityRef?: string;
   /** Provider that generated this descriptor, e.g. `'catalog'` or `'dsl'`. */

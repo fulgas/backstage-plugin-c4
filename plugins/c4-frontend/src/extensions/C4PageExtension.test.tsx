@@ -1,6 +1,6 @@
 import { ApiProvider } from '@backstage/core-app-api';
 import { TestApiRegistry, wrapInTestApp } from '@backstage/test-utils';
-import { C4Api, c4ApiRef, C4ViewModel } from '@fulgas/plugin-c4-frontend-common';
+import { C4Api, c4ApiRef } from '@fulgas/plugin-c4-frontend-common';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { C4PageContent } from './C4PageExtension';
@@ -11,19 +11,11 @@ jest.mock('@fulgas/plugin-c4-renderer-react', () => ({
   },
 }));
 
-const vm: C4ViewModel = {
-  view: { id: 'v1', type: 'landscape', title: 'L', entityRefs: [], relationshipIds: [], source: 'catalog' },
-  model: { persons: [], systems: [], containers: [], components: [], relationships: [], views: [] },
-};
-
 function mockApi(): C4Api {
   return {
-    getViews: jest.fn().mockResolvedValue([]),
-    getView: jest.fn().mockResolvedValue(vm),
-    getEntityViews: jest.fn().mockResolvedValue([]),
-    getLandscape: jest.fn().mockResolvedValue(vm),
-    getViewHistory: jest.fn().mockResolvedValue([]),
-    getViewDiff: jest.fn().mockResolvedValue({ added: {}, removed: {}, changed: {} }),
+    getViewDescriptors: jest.fn().mockResolvedValue([]),
+    getDiagram: jest.fn().mockResolvedValue(undefined),
+    getEntityViewDescriptors: jest.fn().mockResolvedValue([]),
     triggerSync: jest.fn().mockResolvedValue({ status: 'started' }),
   };
 }

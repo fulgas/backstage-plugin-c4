@@ -20,7 +20,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   const router = Router();
   router.use(express.json());
 
-  router.get('/views', async (req: Request, res: Response, next) => {
+  router.get('/views', async (_req: Request, res: Response, next) => {
     try {
       const descriptors = await store.getViewDescriptors();
       if (descriptors.length === 0) {

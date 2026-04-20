@@ -142,7 +142,3 @@ function buildModel(
   return { model: { nodes, actors, relationships }, descriptors };
 }
 
-const C4_MODEL_ANNOTATION = 'c4/structurizr-path';
-const SOURCE_LOCATION_ANNOTATION = 'backstage.io/source-location';
-const CONVENTION_PATH = 'c4-model.dsl';
-

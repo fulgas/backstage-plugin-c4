@@ -4,7 +4,7 @@ import { TestApiRegistry, wrapInTestApp } from '@backstage/test-utils';
 import { ApiProvider } from '@backstage/core-app-api';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Entity } from '@backstage/catalog-model';
-import { c4ApiRef, C4Api, C4ViewModel } from '@fulgas/plugin-c4-frontend-common';
+import { c4ApiRef, C4Api } from '@fulgas/plugin-c4-frontend-common';
 import { EntityC4Tab } from './EntityC4Tab';
 
 jest.mock('@fulgas/plugin-c4-renderer-react', () => ({
@@ -13,21 +13,35 @@ jest.mock('@fulgas/plugin-c4-renderer-react', () => ({
   },
 }));
 
-const systemEntity: Entity = { apiVersion: 'backstage.io/v1alpha1', kind: 'System', metadata: { name: 'my-system', namespace: 'default' }, spec: { owner: 'team-a' }, relations: [] };
-const vm: C4ViewModel = { view: { id: 'v1', type: 'context', title: 'Context', entityRefs: [], relationshipIds: [], source: 'catalog', entityRef: 'system:default/my-system' }, model: { persons: [], systems: [], containers: [], components: [], relationships: [], views: [] } };
+const systemEntity: Entity = {
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'System',
+  metadata: { name: 'my-system', namespace: 'default' },
+  spec: { owner: 'team-a' },
+  relations: [],
+};
 
-function mockApi(views: any[] = [vm.view]): C4Api {
-  return { getViews: jest.fn().mockResolvedValue(views), getView: jest.fn().mockResolvedValue(vm), getEntityViews: jest.fn().mockResolvedValue(views), getLandscape: jest.fn().mockResolvedValue(vm), triggerSync: jest.fn().mockResolvedValue({ status: 'started' }) };
+function mockApi(): C4Api {
+  return {
+    getViewDescriptors: jest.fn().mockResolvedValue([]),
+    getDiagram: jest.fn().mockResolvedValue(undefined),
+    getEntityViewDescriptors: jest.fn().mockResolvedValue([]),
+    triggerSync: jest.fn().mockResolvedValue({ status: 'started' }),
+  };
 }
 
 function wrap(api: C4Api, entity = systemEntity) {
   return ({ children }: { children: React.ReactNode }) => (
-    wrapInTestApp(<ApiProvider apis={TestApiRegistry.from([c4ApiRef, api])}><EntityProvider entity={entity}>{children}</EntityProvider></ApiProvider>)
+    wrapInTestApp(
+      <ApiProvider apis={TestApiRegistry.from([c4ApiRef, api])}>
+        <EntityProvider entity={entity}>{children}</EntityProvider>
+      </ApiProvider>
+    )
   );
 }
 
 describe('EntityC4Tab', () => {
-  it('renders progress while redirecting', async () => {
+  it('renders without crashing', async () => {
     const { container } = render(<EntityC4Tab />, { wrapper: wrap(mockApi()) as any });
     await waitFor(() => expect(container.firstChild).toBeTruthy());
   });

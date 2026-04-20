@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
 import path from 'path';
-import { C4Actor, C4Diagram, C4Model, C4Node, C4Relationship, C4Source, C4ViewDescriptor } from '../types';
+import { C4Actor, C4Diagram, C4DiagramLevel, C4Model, C4Node, C4Relationship, C4Source, C4ViewDescriptor } from '../types';
 
 /**
  * Primary data store for the C4 backend plugin.
@@ -100,15 +100,21 @@ export class ModelStore {
 
   /** Return all view descriptors, optionally filtered by owning Backstage entity ref. */
   async getViewDescriptors(opts?: { entityRef?: string }): Promise<C4ViewDescriptor[]> {
-    let query = this.db('c4_view_descriptors');
-    if (opts?.entityRef) query = query.where({ entity_ref: opts.entityRef });
+    let query = this.db('c4_view_descriptors as vd')
+      .leftJoin('c4_nodes as n', 'vd.subject_id', 'n.id')
+      .select('vd.*', 'n.depth as subject_depth');
+    if (opts?.entityRef) query = query.where({ 'vd.entity_ref': opts.entityRef });
     const rows = await query;
     return rows.map(this.rowToDescriptor);
   }
 
   /** Return a single descriptor by ID, or `undefined` if not found. */
   async getViewDescriptor(id: string): Promise<C4ViewDescriptor | undefined> {
-    const row = await this.db('c4_view_descriptors').where({ id }).first();
+    const row = await this.db('c4_view_descriptors as vd')
+      .leftJoin('c4_nodes as n', 'vd.subject_id', 'n.id')
+      .select('vd.*', 'n.depth as subject_depth')
+      .where({ 'vd.id': id })
+      .first();
     return row ? this.rowToDescriptor(row) : undefined;
   }
 
@@ -253,12 +259,16 @@ export class ModelStore {
   }
 
   private rowToDescriptor(row: any): C4ViewDescriptor {
+    const depth: number = row.subject_depth ?? 0;
+    const level: C4DiagramLevel =
+      depth === 0 ? 'landscape' : depth === 1 ? 'context' : 'container';
     return {
       id: row.id,
       title: row.title,
       subjectId: row.subject_id,
       entityRef: row.entity_ref ?? undefined,
       source: row.source,
+      level,
     };
   }
 }

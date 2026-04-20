@@ -2,41 +2,21 @@ import { Content, EmptyState, Header, Link, Page, Progress, Table, TableColumn }
 import { PageBlueprint } from '@backstage/frontend-plugin-api';
 import { CatalogFilterLayout } from '@backstage/plugin-catalog-react';
 import {
-  C4DiagramViewer,
-  C4View,
-  C4ViewType,
+  C4ViewDescriptor,
   useC4View,
   useC4Views,
 } from '@fulgas/plugin-c4-frontend-common';
 import { ReactC4Renderer } from '@fulgas/plugin-c4-renderer-react';
-import {
-  Box,
-  FormControl,
-  InputLabel,
-  List,
-  ListItem,
-  ListItemText,
-  MenuItem,
-  Select,
-  Typography,
-} from '@material-ui/core';
+import { Box, List, ListItem, ListItemText, Typography } from '@material-ui/core';
 import React, { useMemo, useState } from 'react';
+import { C4DiagramViewer } from '@fulgas/plugin-c4-frontend-common';
 
 const renderer = new ReactC4Renderer();
 
-const columns: TableColumn<C4View>[] = [
+const columns: TableColumn<C4ViewDescriptor>[] = [
   { title: 'Title', field: 'title', highlight: true },
-  { title: 'Type', field: 'type', width: '120px' },
   { title: 'Source', field: 'source', width: '120px' },
   { title: 'Entity', field: 'entityRef', render: row => row.entityRef ?? '—' },
-];
-
-const LEVEL_OPTIONS: { value: C4ViewType | 'all'; label: string }[] = [
-  { value: 'all', label: 'All levels' },
-  { value: 'landscape', label: 'Landscape' },
-  { value: 'context', label: 'Context' },
-  { value: 'container', label: 'Container' },
-  { value: 'component', label: 'Component' },
 ];
 
 function kindOf(entityRef: string | undefined): string {
@@ -45,22 +25,20 @@ function kindOf(entityRef: string | undefined): string {
 }
 
 export function C4PageContent() {
-  const [level, setLevel] = useState<C4ViewType | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [kindFilter, setKindFilter] = useState<string>('all');
 
-  const effectiveLevel = level === 'all' ? undefined : level;
-  const { views, loading: viewsLoading, building } = useC4Views({ level: effectiveLevel });
-  const { viewModel, loading: vmLoading, error } = useC4View(selectedId);
+  const { descriptors, loading: descriptorsLoading, building } = useC4Views();
+  const { diagram, loading: vmLoading, error } = useC4View(selectedId);
 
   const kinds = useMemo(() => {
-    const set = new Set((views ?? []).map(v => kindOf(v.entityRef)));
+    const set = new Set((descriptors ?? []).map(d => kindOf(d.entityRef)));
     return ['all', ...Array.from(set).sort()];
-  }, [views]);
+  }, [descriptors]);
 
   const filtered = useMemo(() =>
-    (views ?? []).filter(v => kindFilter === 'all' || kindOf(v.entityRef) === kindFilter),
-    [views, kindFilter],
+    (descriptors ?? []).filter(d => kindFilter === 'all' || kindOf(d.entityRef) === kindFilter),
+    [descriptors, kindFilter],
   );
 
   if (building) {
@@ -80,12 +58,12 @@ export function C4PageContent() {
   if (selectedId) {
     return (
       <Page themeId="tool">
-        <Header title="C4 Architecture Diagrams" subtitle={viewModel?.view.title} />
+        <Header title="C4 Architecture Diagrams" subtitle={diagram?.descriptor.title} />
         <Content>
           <Box style={{ marginBottom: 12 }}>
             <Link to="#" onClick={e => { e.preventDefault(); setSelectedId(undefined); }}>← Back to all views</Link>
           </Box>
-          <C4DiagramViewer viewModel={viewModel} renderer={renderer} loading={vmLoading} error={error} />
+          <C4DiagramViewer diagram={diagram} renderer={renderer} loading={vmLoading} error={error} />
         </Content>
       </Page>
     );
@@ -98,24 +76,6 @@ export function C4PageContent() {
         <CatalogFilterLayout>
           <CatalogFilterLayout.Filters>
             <Box style={{ padding: '8px 16px' }}>
-              <FormControl variant="outlined" size="small" fullWidth style={{ marginBottom: 16 }}>
-                <InputLabel id="c4-level-label">Level</InputLabel>
-                <Select
-                  labelId="c4-level-label"
-                  label="Level"
-                  value={level}
-                  onChange={e => {
-                    setLevel(e.target.value as C4ViewType | 'all');
-                    setKindFilter('all');
-                    setSelectedId(undefined);
-                  }}
-                >
-                  {LEVEL_OPTIONS.map(opt => (
-                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
               {kinds.length > 1 && (
                 <>
                   <Typography variant="subtitle2" style={{ marginBottom: 4 }}>Kind</Typography>
@@ -128,9 +88,7 @@ export function C4PageContent() {
                         onClick={() => { setKindFilter(k); setSelectedId(undefined); }}
                         style={{ borderRadius: 4 }}
                       >
-                        <ListItemText
-                          primary={k === 'all' ? 'All kinds' : k.charAt(0).toUpperCase() + k.slice(1)}
-                        />
+                        <ListItemText primary={k === 'all' ? 'All kinds' : k.charAt(0).toUpperCase() + k.slice(1)} />
                       </ListItem>
                     ))}
                   </List>
@@ -138,14 +96,13 @@ export function C4PageContent() {
               )}
             </Box>
           </CatalogFilterLayout.Filters>
-
           <CatalogFilterLayout.Content>
-            {viewsLoading ? (
+            {descriptorsLoading ? (
               <Progress />
             ) : filtered.length === 0 ? (
               <EmptyState missing="data" title="No views found" description="No C4 diagrams available for this filter." />
             ) : (
-              <Table<C4View>
+              <Table<C4ViewDescriptor>
                 title="Diagrams"
                 options={{ paging: true, pageSize: 20, search: true }}
                 columns={columns}

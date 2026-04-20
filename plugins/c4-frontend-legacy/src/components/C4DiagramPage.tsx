@@ -5,7 +5,7 @@ import { Breadcrumbs, Link, Box } from '@material-ui/core';
 import { DiagramView } from './DiagramView';
 
 function C4DiagramPageInner() {
-  const { namespace = 'default', kind = 'domain', name = '' } = useParams<{ namespace: string; kind: string; name: string }>();
+  const { namespace = 'default', kind = 'domain', name = '', viewId = '' } = useParams<{ namespace: string; kind: string; name: string; viewId: string }>();
   const navigate = useNavigate();
 
   return (
@@ -20,7 +20,7 @@ function C4DiagramPageInner() {
             <span>{name}</span>
           </Breadcrumbs>
         </Box>
-        <DiagramView key={`${kind}/${namespace}/${name}`} kind={kind} namespace={namespace} name={name} />
+        <DiagramView key={`${kind}/${namespace}/${name}`} kind={kind} namespace={namespace} name={name} viewId={viewId} />
       </Content>
     </Page>
   );

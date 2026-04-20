@@ -16,24 +16,24 @@ function parseRef(ref: string): { kind: string; namespace: string; name: string 
 
 type NavEntry = { kind: string; namespace: string; name: string; label: string };
 
-function EntityViewById({ viewKind, namespace, name, onNavigate }: {
+function EntityViewById({ viewKind, namespace, name, onNodeClick }: {
   viewKind: string; namespace: string; name: string;
   onNodeClick: (ref: string, label: string) => void;
 }) {
-  const { views, loading, building } = useEntityC4Views(viewKind, namespace, name);
-  const viewId = views?.[0]?.id;
-  const { viewModel, loading: vmLoading, error } = useC4View(viewId);
+  const { descriptors, loading, building } = useEntityC4Views(viewKind, namespace, name);
+  const viewId = descriptors?.[0]?.id;
+  const { diagram, loading: vmLoading, error } = useC4View(viewId);
 
   const handleNavigate = useCallback((catalogEntityRef: string) => {
     const parsed = parseRef(catalogEntityRef);
     if (!parsed) return;
-    onNavigate(catalogEntityRef, parsed.name);
-  }, [onNavigate]);
+    onNodeClick(catalogEntityRef, parsed.name);
+  }, [onNodeClick]);
 
   if (building) return <EmptyState missing="data" title="Building diagrams…" description="C4 diagrams are being generated. Please refresh the page when done." />;
   if (loading) return <Progress />;
-  if (!views || views.length === 0) return <EmptyState missing="data" title="No C4 diagrams" description="No C4 diagrams found for this entity." />;
-  return <C4DiagramViewer viewModel={viewModel} renderer={renderer} loading={vmLoading} error={error} onNodeClick={handleNavigate} />;
+  if (!descriptors || descriptors.length === 0) return <EmptyState missing="data" title="No C4 diagrams" description="No C4 diagrams found for this entity." />;
+  return <C4DiagramViewer diagram={diagram} renderer={renderer} loading={vmLoading} error={error} onNodeClick={handleNavigate} />;
 }
 
 export function EntityC4TabContent() {

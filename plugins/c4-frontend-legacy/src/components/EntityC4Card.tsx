@@ -8,7 +8,6 @@ import {
 } from '@fulgas/plugin-c4-frontend-common';
 import { ReactC4Renderer } from '@fulgas/plugin-c4-renderer-react';
 import React from 'react';
-import { SWRConfig } from 'swr';
 
 const renderer = new ReactC4Renderer();
 
@@ -18,26 +17,18 @@ function EntityC4CardInner() {
     kind,
     metadata: { namespace = 'default', name },
   } = entity;
-  const { views, loading } = useEntityC4Views(
-    kind.toLowerCase(),
-    namespace,
-    name,
-  );
-  const firstView = (views ?? [])[0];
-  const { viewModel } = useC4View(firstView?.id);
+  const { descriptors, loading } = useEntityC4Views(kind.toLowerCase(), namespace, name);
+  const firstDescriptor = (descriptors ?? [])[0];
+  const { diagram, loading: vmLoading } = useC4View(firstDescriptor?.id);
 
-  if (!loading && (!views || views.length === 0)) return null;
+  if (!loading && (!descriptors || descriptors.length === 0)) return null;
 
   return (
     <InfoCard title="C4 Architecture">
       <div style={{ height: 200, overflow: 'hidden' }}>
-        <C4DiagramViewer
-          viewModel={viewModel}
-          renderer={renderer}
-          loading={loading}
-        />
+        <C4DiagramViewer diagram={diagram} renderer={renderer} loading={loading || vmLoading} />
       </div>
-      {!viewModel && !loading && (
+      {!diagram && !loading && !vmLoading && (
         <Text variant="body">No C4 diagrams available</Text>
       )}
     </InfoCard>
@@ -45,9 +36,5 @@ function EntityC4CardInner() {
 }
 
 export function EntityC4Card() {
-  return (
-    <SWRConfig value={{ provider: () => new Map() }}>
-      <EntityC4CardInner />
-    </SWRConfig>
-  );
+  return <EntityC4CardInner />;
 }

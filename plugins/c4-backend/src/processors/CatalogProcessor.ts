@@ -98,7 +98,11 @@ export class CatalogProcessor {
         };
         nodes.push(node);
         nodeMap.set(ref, node);
-        descriptors.push({ id: `catalog-container-${sanitize(ref)}`, title: entity.metadata.name, subjectId: ref, entityRef: ref, source: 'catalog' });
+        // Resources are leaf nodes (databases, queues) — they appear inside their
+        // parent system's container diagram but don't need their own diagram.
+        if (entity.kind === 'Component') {
+          descriptors.push({ id: `catalog-container-${sanitize(ref)}`, title: entity.metadata.name, subjectId: ref, entityRef: ref, source: 'catalog' });
+        }
 
         for (const relation of entity.relations ?? []) {
           if (relation.type === 'dependsOn' && !relation.targetRef.startsWith('api:')) {

@@ -16,30 +16,19 @@ const renderer = new ReactC4Renderer();
 
 function EntityC4CardInner() {
   const { entity } = useEntity();
-  const {
-    kind,
-    metadata: { namespace = 'default', name },
-  } = entity;
-  const { views, loading } = useEntityC4Views(
-    kind.toLowerCase(),
-    namespace,
-    name,
-  );
-  const firstView = (views ?? [])[0];
-  const { viewModel, loading: vmLoading } = useC4View(firstView?.id);
+  const { kind, metadata: { namespace = 'default', name } } = entity;
+  const { descriptors, loading } = useEntityC4Views(kind.toLowerCase(), namespace, name);
+  const firstDescriptor = (descriptors ?? [])[0];
+  const { diagram, loading: vmLoading } = useC4View(firstDescriptor?.id);
 
-  if (!loading && (!views || views.length === 0)) return null;
+  if (!loading && (!descriptors || descriptors.length === 0)) return null;
 
   return (
     <InfoCard title="C4 Architecture">
       <div style={{ height: 200, overflow: 'hidden' }}>
-        <C4DiagramViewer
-          viewModel={viewModel}
-          renderer={renderer}
-          loading={loading || vmLoading}
-        />
+        <C4DiagramViewer diagram={diagram} renderer={renderer} loading={loading || vmLoading} />
       </div>
-      {!viewModel && !loading && !vmLoading && (
+      {!diagram && !loading && !vmLoading && (
         <Text variant="body">No C4 diagrams available</Text>
       )}
     </InfoCard>

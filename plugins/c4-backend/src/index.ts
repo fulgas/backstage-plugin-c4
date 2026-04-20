@@ -108,7 +108,15 @@ export const c4Plugin = createBackendPlugin({
         }
 
         const router = await createRouter({ store, syncFn: runSync });
-        httpRouter.use(router);
+        // Cast required: two incompatible copies of @types/express exist in the dep
+        // tree (@backstage/backend-plugin-api pulls its own via @types/passport).
+        // At runtime these are identical — the cast is safe.
+        httpRouter.use(router as any);
+        httpRouter.addAuthPolicy({ path: '/views', allow: 'unauthenticated' });
+        httpRouter.addAuthPolicy({ path: '/views/:id', allow: 'unauthenticated' });
+        httpRouter.addAuthPolicy({ path: '/entity/:kind/:namespace/:name/views', allow: 'unauthenticated' });
+        httpRouter.addAuthPolicy({ path: '/health', allow: 'unauthenticated' });
+        httpRouter.addAuthPolicy({ path: '/sync', allow: 'unauthenticated' });
 
         const syncFreqMinutes = config.getOptionalNumber('c4.schedule.frequency.minutes') ?? 15;
         const syncTimeoutMinutes = config.getOptionalNumber('c4.schedule.timeout.minutes') ?? 5;

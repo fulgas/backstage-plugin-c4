@@ -96,7 +96,7 @@ const routes = (
     <Route path="/settings" element={<UserSettingsPage />} />
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/c4" element={<C4IndexPage />} />
-    <Route path="/c4/:namespace/:kind/:name" element={<C4DiagramPage />} />
+    <Route path="/c4/:namespace/:kind/:name/:viewId" element={<C4DiagramPage />} />
   </FlatRoutes>
 );
 

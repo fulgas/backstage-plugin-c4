@@ -6,5 +6,5 @@ export const c4IndexRouteRef = createRouteRef({ id: 'c4.index' });
 
 export const c4DiagramRouteRef = createRouteRef({
   id: 'c4.diagram',
-  params: ['namespace', 'kind', 'name'],
+  params: ['namespace', 'kind', 'name', 'viewId'],
 });
