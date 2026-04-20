@@ -67,11 +67,10 @@ export const RELATIONSHIP_MARKER_SIZE = 16;
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 /**
- * Dagre graph layout direction.
+ * Layout direction for the graph.
  *
- * C4 model convention (Simon Brown) and Structurizr default: **top-to-bottom** ('TB').
- * Official examples on c4model.com all use top-to-bottom layouts.
- * Left-to-right ('LR') can be used for process/flow diagrams but is not the C4 norm.
+ * C4 model convention (Simon Brown) and Structurizr default: **top-to-bottom**.
+ * Used by the dagre engine (`rankdir`) and the ELK engine (`elk.direction: DOWN`).
  *
  * Reference: https://c4model.com/#Examples
  */

@@ -6496,6 +6496,7 @@ __metadata:
     "@fulgas/plugin-c4-node": "npm:^0.1.0"
     "@testing-library/react": "npm:^14.0.0"
     "@xyflow/react": "npm:^12.10.2"
+    elkjs: "npm:^0.11.1"
     react: "npm:^18.0.0"
   peerDependencies:
     react: ^16.13.1 || ^17.0.0 || ^18.0.0
@@ -18778,6 +18779,13 @@ __metadata:
   version: 1.5.340
   resolution: "electron-to-chromium@npm:1.5.340"
   checksum: 10c0/d21e2f9833dbcf52b2ff5587f2a7d833dffdfe3f3c2cda25c52950e481c6193d5993ef3b4b0e5628748ba4e57d8b25f9ae7fcddfa8ad4d7816f67bba33dc26b2
+  languageName: node
+  linkType: hard
+
+"elkjs@npm:^0.11.1":
+  version: 0.11.1
+  resolution: "elkjs@npm:0.11.1"
+  checksum: 10c0/e2216a7439c9dc65413e5f8d9e46bf829c32dacbfd869585bae8f8775b3cd5802d0ac9ccf0f45ad14decfa622244a092533263cc3a596e6d82e8247bf6bf84d7
   languageName: node
   linkType: hard
 

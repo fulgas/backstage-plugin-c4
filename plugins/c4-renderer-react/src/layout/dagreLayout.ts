@@ -4,7 +4,8 @@ import { MarkerType, type Node, type Edge } from '@xyflow/react';
 import {
   NODE_W, NODE_H, BOUNDARY_PAD, RANK_SEP, NODE_SEP, LAYOUT_DIRECTION,
   COLOR_RELATIONSHIP, RELATIONSHIP_STROKE_WIDTH, RELATIONSHIP_MARKER_SIZE,
-} from './c4Style';
+} from '../c4Style';
+import type { LayoutResult } from './types';
 
 function depthLabel(depth: number): string {
   if (depth === 0) return 'Domain';
@@ -12,23 +13,45 @@ function depthLabel(depth: number): string {
   return 'Container';
 }
 
+function nodeData(n: C4Node | C4Actor) {
+  if ('depth' in n) {
+    return {
+      label: n.name,
+      description: n.description,
+      technology: n.technology,
+      subType: n.subType,
+      entityRef: n.catalogEntityRef ?? n.id,
+    };
+  }
+  return {
+    label: n.name,
+    description: n.description,
+    entityRef: (n as any).catalogEntityRef ?? n.id,
+  };
+}
+
 /**
- * Convert a `C4Diagram` into React Flow nodes and edges with dagre layout.
+ * Lay out a C4Diagram using dagre (synchronous, two-pass).
  *
- * Layout strategy:
- * - Internal nodes are laid out with dagre in a sub-graph.
- * - The boundary node is sized to wrap them with padding.
- * - External nodes and actors are laid out in a second dagre pass
- *   around the boundary.
+ * Pass 1: internal sub-graph → computes boundary size.
+ * Pass 2: boundary + external nodes + actors.
+ *
+ * Edges use React Flow's default bezier type; no obstacle avoidance.
+ * For full obstacle-avoiding routing switch to the ELK engine.
  */
-export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[] } {
+export async function dagreLayout(diagram: C4Diagram): Promise<LayoutResult> {
   const { descriptor, nodes, actors, relationships } = diagram;
   const subjectId = descriptor.subjectId;
   const subject = nodes.find(n => n.id === subjectId);
 
-  const internalNodes = nodes.filter(n => n.id !== subjectId && n.parentId === subjectId ||
-    (subject && subject.depth === 2 && n.id === subjectId));
-  const externalNodes = nodes.filter(n => n.id !== subjectId && n.parentId !== subjectId);
+  const internalNodes = nodes.filter(
+    n =>
+      (n.id !== subjectId && n.parentId === subjectId) ||
+      (subject && subject.depth === 2 && n.id === subjectId),
+  );
+  const externalNodes = nodes.filter(
+    n => n.id !== subjectId && n.parentId !== subjectId,
+  );
 
   // ── Internal layout ───────────────────────────────────────────────────────
   const internalG = new graphlib.Graph();
@@ -38,15 +61,16 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
   for (const n of internalNodes) {
     internalG.setNode(n.id, { width: NODE_W, height: NODE_H });
   }
-  // Add internal edges to influence layout
   for (const r of relationships) {
-    if (internalNodes.some(n => n.id === r.sourceId) && internalNodes.some(n => n.id === r.targetId)) {
+    if (
+      internalNodes.some(n => n.id === r.sourceId) &&
+      internalNodes.some(n => n.id === r.targetId)
+    ) {
       internalG.setEdge(r.sourceId, r.targetId);
     }
   }
   layout(internalG);
 
-  // Compute boundary size
   let bw = NODE_W, bh = NODE_H;
   if (internalNodes.length > 0) {
     let maxX = 0, maxY = 0;
@@ -59,17 +83,16 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
     bh = maxY + BOUNDARY_PAD;
   }
 
-  // ── Outer layout (boundary + externals + actors) ──────────────────────────
-  const BOUNDARY_NODE_ID = `__boundary__${subjectId}`;
+  // ── Outer layout ──────────────────────────────────────────────────────────
+  const BOUNDARY_ID = `__boundary__${subjectId}`;
   const outerG = new graphlib.Graph();
   outerG.setDefaultEdgeLabel(() => ({}));
   outerG.setGraph({ rankdir: LAYOUT_DIRECTION, ranksep: RANK_SEP + 40, nodesep: NODE_SEP });
 
-  outerG.setNode(BOUNDARY_NODE_ID, { width: bw, height: bh });
+  outerG.setNode(BOUNDARY_ID, { width: bw, height: bh });
   for (const n of externalNodes) outerG.setNode(n.id, { width: NODE_W, height: NODE_H });
   for (const a of actors) outerG.setNode(a.id, { width: NODE_W, height: NODE_H });
 
-  // Outer edges — link boundary to external via any relationship crossing the boundary
   const internalIds = new Set([subjectId, ...internalNodes.map(n => n.id)]);
   const externalIds = new Set([...externalNodes.map(n => n.id), ...actors.map(a => a.id)]);
 
@@ -77,38 +100,40 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
     const srcInternal = internalIds.has(r.sourceId);
     const tgtInternal = internalIds.has(r.targetId);
     if (srcInternal && externalIds.has(r.targetId)) {
-      outerG.setEdge(BOUNDARY_NODE_ID, r.targetId);
+      outerG.setEdge(BOUNDARY_ID, r.targetId);
     } else if (externalIds.has(r.sourceId) && tgtInternal) {
-      outerG.setEdge(r.sourceId, BOUNDARY_NODE_ID);
+      outerG.setEdge(r.sourceId, BOUNDARY_ID);
     }
   }
   layout(outerG);
 
-  const boundaryPos = outerG.node(BOUNDARY_NODE_ID);
+  const boundaryPos = outerG.node(BOUNDARY_ID);
   const bx = boundaryPos.x - bw / 2;
   const by = boundaryPos.y - bh / 2;
 
-  // ── Build React Flow nodes ────────────────────────────────────────────────
+  // ── React Flow nodes ──────────────────────────────────────────────────────
   const flowNodes: Node[] = [];
 
-  // Boundary — must come before its children in the array (React Flow requirement)
   flowNodes.push({
-    id: BOUNDARY_NODE_ID,
+    id: BOUNDARY_ID,
     type: 'boundary',
     position: { x: bx, y: by },
-    data: { label: subject ? `${depthLabel(subject.depth)}: ${subject.name}` : 'Boundary', width: bw, height: bh },
+    data: {
+      label: subject ? `${depthLabel(subject.depth)}: ${subject.name}` : 'Boundary',
+      width: bw,
+      height: bh,
+    },
     style: { width: bw, height: bh },
     selectable: false,
     draggable: false,
   });
 
-  // Internal nodes — positioned relative to the boundary (parentId = boundary)
   for (const n of internalNodes) {
     const pos = internalG.node(n.id);
     flowNodes.push({
       id: n.id,
       type: 'internal',
-      parentId: BOUNDARY_NODE_ID,
+      parentId: BOUNDARY_ID,
       position: { x: pos.x - NODE_W / 2 + BOUNDARY_PAD / 2, y: pos.y - NODE_H / 2 + BOUNDARY_PAD },
       data: nodeData(n),
       draggable: false,
@@ -116,7 +141,6 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
     });
   }
 
-  // External nodes
   for (const n of externalNodes) {
     const pos = outerG.node(n.id);
     flowNodes.push({
@@ -129,38 +153,31 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
     });
   }
 
-  // Actors
   for (const a of actors) {
     const pos = outerG.node(a.id);
     flowNodes.push({
       id: a.id,
       type: 'actor',
       position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 },
-      data: { label: a.name, description: a.description },
+      data: nodeData(a),
       draggable: false,
       selectable: false,
     });
   }
 
-  // ── Build React Flow edges ────────────────────────────────────────────────
-  // Connect edges directly between real nodes — never route through the boundary node.
-  // C4 rule: arrow exits from the side facing the target and enters from the opposite side.
+  // ── React Flow edges ──────────────────────────────────────────────────────
   const allNodeIds = new Set(flowNodes.map(n => n.id));
-  allNodeIds.delete(BOUNDARY_NODE_ID);
+  allNodeIds.delete(BOUNDARY_ID);
 
-  // Build absolute position lookup — internal nodes are relative to boundary, convert back to absolute
   const absPos = new Map<string, { x: number; y: number }>();
   for (const n of flowNodes) {
-    if ((n as any).parentId === BOUNDARY_NODE_ID) {
+    if ((n as any).parentId === BOUNDARY_ID) {
       absPos.set(n.id, { x: bx + n.position.x, y: by + n.position.y });
     } else {
       absPos.set(n.id, n.position);
     }
   }
 
-  const flowEdges: Edge[] = [];
-  // Group relationships by source→target pair and merge those with the same label.
-  // Multiple services calling the same API produce identical arrows — show only one.
   const edgeMap = new Map<string, typeof relationships>();
   for (const r of relationships) {
     if (!allNodeIds.has(r.sourceId) || !allNodeIds.has(r.targetId)) continue;
@@ -169,6 +186,7 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
     edgeMap.get(key)!.push(r);
   }
 
+  const flowEdges: Edge[] = [];
   for (const [, group] of edgeMap) {
     const r = group[0];
     const sp = absPos.get(r.sourceId)!;
@@ -179,15 +197,13 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
       ? dx >= 0 ? { sh: 's-right', th: 't-left' } : { sh: 's-left', th: 't-right' }
       : dy >= 0 ? { sh: 's-bottom', th: 't-top' } : { sh: 's-top', th: 't-bottom' };
 
-    // Build merged label: collect unique label strings and join them
     const labelParts = Array.from(
       new Set(
-        group.map(rel =>
-          rel.technology ? `${rel.description} [${rel.technology}]` : rel.description,
-        ).filter(Boolean),
+        group
+          .map(rel => (rel.technology ? `${rel.description} [${rel.technology}]` : rel.description))
+          .filter(Boolean),
       ),
     );
-    const label = labelParts.join('\n') || undefined;
 
     flowEdges.push({
       id: group.map(rel => rel.id).join('+'),
@@ -195,9 +211,14 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
       target: r.targetId,
       sourceHandle: sh,
       targetHandle: th,
-      label,
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed, color: COLOR_RELATIONSHIP, width: RELATIONSHIP_MARKER_SIZE, height: RELATIONSHIP_MARKER_SIZE },
+      label: labelParts.join('\n') || undefined,
+      type: 'default',
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: COLOR_RELATIONSHIP,
+        width: RELATIONSHIP_MARKER_SIZE,
+        height: RELATIONSHIP_MARKER_SIZE,
+      },
       style: { stroke: COLOR_RELATIONSHIP, strokeWidth: RELATIONSHIP_STROKE_WIDTH },
       labelStyle: { fontSize: 10, fill: '#333', fontStyle: 'italic' },
       labelShowBg: false,
@@ -205,11 +226,4 @@ export function diagramToFlow(diagram: C4Diagram): { nodes: Node[]; edges: Edge[
   }
 
   return { nodes: flowNodes, edges: flowEdges };
-}
-
-function nodeData(n: C4Node | C4Actor) {
-  if ('depth' in n) {
-    return { label: n.name, description: n.description, technology: n.technology, subType: n.subType };
-  }
-  return { label: n.name, description: n.description };
 }
