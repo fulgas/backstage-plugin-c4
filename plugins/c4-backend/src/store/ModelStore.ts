@@ -289,14 +289,13 @@ export class ModelStore {
     this.cache.delete(viewId);
     await this.db.transaction(async trx => {
       await trx('c4_node_positions').where({ view_id: viewId }).delete();
-      for (const [nodeId, pos] of Object.entries(positions)) {
-        await trx('c4_node_positions').insert({
-          view_id: viewId,
-          node_id: nodeId,
-          x: pos.x,
-          y: pos.y,
-        });
-      }
+      const rows = Object.entries(positions).map(([nodeId, pos]) => ({
+        view_id: viewId,
+        node_id: nodeId,
+        x: pos.x,
+        y: pos.y,
+      }));
+      if (rows.length > 0) await trx('c4_node_positions').insert(rows);
     });
   }
 

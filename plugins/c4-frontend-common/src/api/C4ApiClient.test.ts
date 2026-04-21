@@ -1,11 +1,17 @@
-import { C4ApiClient } from './C4ApiClient';
 import { DiscoveryApi, FetchApi } from '@backstage/core-plugin-api';
+import { C4ApiClient } from './C4ApiClient';
 
 function mockDiscovery(): jest.Mocked<DiscoveryApi> {
-  return { getBaseUrl: jest.fn().mockResolvedValue('http://localhost:7007/api/c4') } as any;
+  return {
+    getBaseUrl: jest.fn().mockResolvedValue('http://localhost:7007/api/c4'),
+  } as any;
 }
 function mockFetch(body: unknown): jest.Mocked<FetchApi> {
-  return { fetch: jest.fn().mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue(body) }) } as any;
+  return {
+    fetch: jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue(body) }),
+  } as any;
 }
 
 describe('C4ApiClient', () => {
@@ -13,28 +19,46 @@ describe('C4ApiClient', () => {
     const fetchApi = mockFetch([]);
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
     await client.getViewDescriptors();
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/views');
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/views',
+    );
   });
 
   it('getDiagram calls GET /views/:id', async () => {
     const fetchApi = mockFetch({});
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
     await client.getDiagram('v1');
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/views/v1');
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/views/v1',
+    );
   });
 
   it('getEntityViewDescriptors calls correct URL', async () => {
     const fetchApi = mockFetch([]);
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
     await client.getEntityViewDescriptors('system', 'default', 'my-system');
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/entity/system/default/my-system/views');
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/entity/system/default/my-system/views',
+    );
+  });
+
+  it('getEntityViewDescriptors encodes path segments', async () => {
+    const fetchApi = mockFetch([]);
+    const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
+    await client.getEntityViewDescriptors('system', 'my ns', 'my/name');
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/entity/system/my%20ns/my%2Fname/views',
+    );
   });
 
   it('triggerSync calls POST /sync', async () => {
     const fetchApi = mockFetch({ status: 'started' });
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
     await client.triggerSync();
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/sync', expect.objectContaining({ method: 'POST' }));
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/sync',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('updateViewSettings calls PATCH /views/:id/settings', async () => {

@@ -1,7 +1,7 @@
 # Diagram Layout Persistence
 
 **Date:** 2026-04-21  
-**Status:** Approved
+**Status:** Implemented
 
 ## Overview
 
@@ -105,11 +105,14 @@ else
 
 When `editMode=true`:
 
-- `nodesDraggable={true}`
+- `nodesDraggable={true}` — node-level `draggable: true` also set per-node (overrides ELK's hardcoded `false`)
+- `edgesReconnectable={true}` — edge endpoints are draggable to change attachment handle
+- `elementsSelectable={true}` — required for edge reconnect
 - `nodesConnectable={false}` (still)
-- `elementsSelectable={false}` (still)
 - `onNodeClick` disabled (no entity navigation)
-- `onNodesChange` tracks dragged positions in local state
+- `onNodesChange` tracks dragged positions; `resizeBoundary()` called on position changes to auto-expand the boundary box
+- `onEdgesChange` + `onReconnect` handle edge endpoint reconnection
+- ELK edge `sections` cleared at render time so edges use live handle positions instead of static coordinates
 
 ### `C4DiagramViewer` changes (`c4-frontend-common`)
 
@@ -123,7 +126,7 @@ Owns edit mode state and toolbar:
 Behaviour:
 
 - **Edit Layout**: enter edit mode (no backend call)
-- **Cancel**: exit edit mode, discard local position changes (no backend call)
+- **Cancel**: exit edit mode, discard drag changes, restore saved layout via `resetKey` increment (no backend call)
 - **Save Layout**: call `api.saveNodePositions(viewId, positions)`, exit edit mode
 - **Reset Layout**: call `api.resetNodePositions(viewId)`, exit edit mode, triggers diagram reload (ELK runs)
 
@@ -139,6 +142,8 @@ export interface C4RenderOptions {
   onPositionsChange?: (
     positions: Record<string, { x: number; y: number }>,
   ) => void;
+  /** Increment to force the renderer to discard unsaved drag state and restore the persisted layout. */
+  resetKey?: number;
 }
 ```
 
@@ -180,13 +185,12 @@ Sync runs
 | `c4-backend/src/router.ts`                              | `PUT /views/:id/positions`, `DELETE /views/:id/positions`                         |
 | `c4-frontend-common/src/api/C4Api.ts`                   | Add `saveNodePositions`, `resetNodePositions`                                     |
 | `c4-frontend-common/src/api/C4ApiClient.ts`             | Implement new API methods                                                         |
-| `c4-frontend-common/src/renderer/RendererInterface.ts`  | Add `editMode`, `onPositionsChange` to `C4RenderOptions`                          |
-| `c4-frontend-common/src/components/C4DiagramViewer.tsx` | Edit mode state, toolbar buttons, wire save/reset                                 |
-| `c4-renderer-react/src/ReactFlowDiagram.tsx`            | Layout selection logic, `editMode` prop, position tracking                        |
+| `c4-frontend-common/src/renderer/RendererInterface.ts`  | Add `editMode`, `onPositionsChange`, `resetKey` to `C4RenderOptions`              |
+| `c4-frontend-common/src/components/C4DiagramViewer.tsx` | Edit mode state, MUI toolbar buttons, wire save/reset/cancel                      |
+| `c4-renderer-react/src/ReactFlowDiagram.tsx`            | Layout selection, edit mode dragging, boundary resize, edge reconnect             |
 
 ## Out of Scope
 
 - Per-user layouts
-- Edge routing overrides (only node positions)
 - Undo/redo
 - Auto-save

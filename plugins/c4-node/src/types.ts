@@ -159,8 +159,8 @@ export interface C4Diagram {
   /** Only edges where both sides are present in `nodes` or `actors`. */
   relationships: C4Relationship[];
   /**
-   * Saved node positions keyed by React Flow node ID (includes boundary node
-   * `__boundary__<subjectId>`). Empty object means no layout is saved — use ELK.
+   * Saved node positions keyed by node ID. The boundary is stored under a
+   * synthetic key derived from the subject ID. Empty object = no saved layout.
    */
   nodePositions: Record<string, { x: number; y: number }>;
 }

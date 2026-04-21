@@ -24,10 +24,20 @@ export interface C4RenderOptions {
     positions: Record<string, { x: number; y: number }>,
   ) => void;
   /**
-   * Increment to force the renderer to discard in-progress drag state and
-   * re-apply the original layout (ELK or saved positions). Used by Cancel.
+   * Increment to force the renderer to discard unsaved drag state and restore
+   * the persisted layout. Used by the Cancel action.
    */
   resetKey?: number;
+  /** Enter edit mode. Renderer surfaces this as a button in its control panel. */
+  onEnterEditMode?: () => void;
+  /** Save current drag positions. Only present when in edit mode. */
+  onSaveLayout?: () => void;
+  /** Reset positions to ELK auto-layout. Only present when in edit mode. */
+  onResetLayout?: () => void;
+  /** Cancel edit mode and restore the previous layout. Only present when in edit mode. */
+  onCancelEdit?: () => void;
+  /** Whether Save Layout is enabled (positions have been dragged). */
+  canSave?: boolean;
 }
 
 /**

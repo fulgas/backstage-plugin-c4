@@ -1,9 +1,13 @@
 import {
   applyEdgeChanges,
   applyNodeChanges,
+  ControlButton,
   Controls,
+  getNodesBounds,
+  getViewportForBounds,
   ReactFlow,
   reconnectEdge,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -12,7 +16,7 @@ import {
   type NodeChange,
   type NodeTypes,
 } from '@xyflow/react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import '@xyflow/react/dist/style.css';
 import type { C4RenderOptions } from '@fulgas/plugin-c4-frontend-common';
 import type { C4Diagram } from '@fulgas/plugin-c4-node';
@@ -37,6 +41,51 @@ const nodeTypes: NodeTypes = {
 const edgeTypes: EdgeTypes = {
   elk: ElkEdge as any,
 };
+
+/** Download button rendered inside <Controls> — needs useReactFlow which requires being a child of <ReactFlow>. */
+function DownloadButton({ title }: { title: string }) {
+  const { getNodes } = useReactFlow();
+
+  const handleDownload = useCallback(() => {
+    const nodes = getNodes();
+    if (!nodes.length) return;
+    const bounds = getNodesBounds(nodes);
+    const W = Math.max(bounds.width + 80, 400);
+    const H = Math.max(bounds.height + 80, 300);
+    const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 40);
+    const el = document.querySelector(
+      '.react-flow__viewport',
+    ) as HTMLElement | null;
+    if (!el) return;
+    import('html-to-image').then(({ toPng }) =>
+      toPng(el, {
+        backgroundColor: '#ffffff',
+        width: W,
+        height: H,
+        style: {
+          width: `${W}px`,
+          height: `${H}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      }).then(dataUrl => {
+        const a = document.createElement('a');
+        a.download = `${title || 'diagram'}.png`;
+        a.href = dataUrl;
+        a.click();
+      }),
+    );
+  }, [getNodes, title]);
+
+  return (
+    <ControlButton title="Download PNG" onClick={handleDownload}>
+      {/* Download icon */}
+      <svg viewBox="0 0 16 16" fill="currentColor">
+        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5" />
+        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z" />
+      </svg>
+    </ControlButton>
+  );
+}
 
 /**
  * Override node positions with saved values, clearing ELK edge sections so
@@ -126,10 +175,15 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     if (!editMode) return;
     setFlow(prev => {
       if (!prev) return prev;
-      const nodes = resizeBoundary(applyNodeChanges(changes, prev.nodes));
-      const positions: Record<string, { x: number; y: number }> = {};
-      for (const n of nodes) positions[n.id] = n.position;
-      options?.onPositionsChange?.(positions);
+      const hasPositionChange = changes.some(c => c.type === 'position');
+      const nodes = hasPositionChange
+        ? resizeBoundary(applyNodeChanges(changes, prev.nodes))
+        : applyNodeChanges(changes, prev.nodes);
+      if (hasPositionChange) {
+        const positions: Record<string, { x: number; y: number }> = {};
+        for (const n of nodes) positions[n.id] = n.position;
+        options?.onPositionsChange?.(positions);
+      }
       return { ...prev, nodes };
     });
   };
@@ -151,6 +205,28 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       };
     });
   };
+
+  const displayNodes = useMemo(
+    () =>
+      editMode
+        ? (flow?.nodes ?? []).map(n =>
+            n.type === 'boundary' ? n : { ...n, draggable: true },
+          )
+        : flow?.nodes ?? [],
+    [flow?.nodes, editMode],
+  );
+
+  const displayEdges = useMemo(
+    () =>
+      editMode
+        ? (flow?.edges ?? []).map(e => ({
+            ...e,
+            reconnectable: true,
+            data: { ...(e.data as object), sections: undefined },
+          }))
+        : flow?.edges ?? [],
+    [flow?.edges, editMode],
+  );
 
   return (
     <div
@@ -182,22 +258,8 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         `}</style>
       )}
       <ReactFlow
-        nodes={
-          editMode
-            ? (flow?.nodes ?? []).map(n =>
-                n.type === 'boundary' ? n : { ...n, draggable: true },
-              )
-            : flow?.nodes ?? []
-        }
-        edges={
-          editMode
-            ? (flow?.edges ?? []).map(e => ({
-                ...e,
-                reconnectable: true,
-                data: { ...(e.data as object), sections: undefined },
-              }))
-            : flow?.edges ?? []
-        }
+        nodes={displayNodes}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -218,7 +280,49 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false}>
+          <DownloadButton title={diagram.descriptor.title} />
+          {editMode ? (
+            <>
+              <ControlButton
+                title="Reset Layout"
+                onClick={options?.onResetLayout}
+              >
+                {/* Reset / refresh icon */}
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z" />
+                  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466" />
+                </svg>
+              </ControlButton>
+              <ControlButton title="Cancel" onClick={options?.onCancelEdit}>
+                {/* X icon */}
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708" />
+                </svg>
+              </ControlButton>
+              <ControlButton
+                title="Save Layout"
+                onClick={options?.canSave ? options?.onSaveLayout : undefined}
+                style={{ opacity: options?.canSave ? 1 : 0.4 }}
+              >
+                {/* Checkmark icon */}
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0" />
+                </svg>
+              </ControlButton>
+            </>
+          ) : (
+            <ControlButton
+              title="Edit Layout"
+              onClick={options?.onEnterEditMode}
+            >
+              {/* Pencil icon */}
+              <svg viewBox="0 0 16 16" fill="currentColor">
+                <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325" />
+              </svg>
+            </ControlButton>
+          )}
+        </Controls>
       </ReactFlow>
     </div>
   );

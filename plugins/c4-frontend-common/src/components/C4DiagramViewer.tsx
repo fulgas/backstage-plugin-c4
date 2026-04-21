@@ -6,30 +6,14 @@ import { c4ApiRef } from '../api/C4Api';
 import { C4Renderer, C4RenderOptions } from '../renderer/RendererInterface';
 import { C4Diagram, C4ViewDisplaySettings } from '../types';
 
-const btnBase: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  padding: '3px 10px',
-  fontSize: 11,
-  cursor: 'pointer',
-  background: '#fff',
-  color: '#333',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-};
-
-const btnPrimary: React.CSSProperties = {
-  ...btnBase,
-  background: '#1976d2',
-  color: '#fff',
-  border: '1px solid #1565c0',
-};
-
 /**
  * Wrapper component that handles loading/error states before delegating
  * rendering to a `C4Renderer` implementation.
  *
- * Includes an Edit Layout toolbar that lets users drag nodes and save/reset
- * the layout to the backend. Saved layouts are shared across all users.
+ * Edit mode is surfaced through the renderer's own control panel (e.g. the
+ * React Flow Controls buttons) rather than a separate toolbar. The viewer
+ * passes action callbacks via `C4RenderOptions` and the renderer decides
+ * how to expose them visually.
  *
  * @example
  * ```tsx
@@ -55,6 +39,8 @@ export function C4DiagramViewer({
 }) {
   const api = useApi(c4ApiRef);
 
+  // Avoid array destructuring — rspack's swc-loader would compile it to
+  // `var _s = _sliced_to_array(…)` which collides with react-refresh's `_s`.
   const editModeState = useState(false);
   const editMode = editModeState[0];
   const setEditMode = editModeState[1];
@@ -65,15 +51,17 @@ export function C4DiagramViewer({
   const pendingPositions = pendingState[0];
   const setPendingPositions = pendingState[1];
 
-  const layoutKeyState = useState(0);
-  const layoutKey = layoutKeyState[0];
-  const setLayoutKey = layoutKeyState[1];
+  const resetKeyState = useState(0);
+  const resetKey = resetKeyState[0];
+  const setResetKey = resetKeyState[1];
 
   const viewId = diagram?.descriptor.id;
+  const canSave =
+    !!pendingPositions && Object.keys(pendingPositions).length > 0;
 
   const handleSaveLayout = async () => {
-    if (!viewId || !pendingPositions) return;
-    await api.saveNodePositions(viewId, pendingPositions);
+    if (!viewId || !canSave) return;
+    await api.saveNodePositions(viewId, pendingPositions!);
     setEditMode(false);
     setPendingPositions(undefined);
   };
@@ -86,55 +74,28 @@ export function C4DiagramViewer({
     setPendingPositions(undefined);
   };
 
-  const handleCancel = () => {
+  const handleCancelEdit = () => {
     setEditMode(false);
     setPendingPositions(undefined);
-    setLayoutKey(k => k + 1);
+    setResetKey(k => k + 1);
   };
 
   if (loading) return <Progress />;
   if (error) return <ErrorPanel error={error} />;
   return (
     <div style={{ width: '100%' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
-        {editMode ? (
-          <>
-            <button style={btnBase} onClick={handleResetLayout}>
-              Reset Layout
-            </button>
-            <button style={btnBase} onClick={handleCancel}>
-              Cancel
-            </button>
-            <button
-              style={{ ...btnPrimary, opacity: pendingPositions ? 1 : 0.5 }}
-              disabled={!pendingPositions}
-              onClick={handleSaveLayout}
-            >
-              Save Layout
-            </button>
-          </>
-        ) : (
-          diagram && (
-            <button style={btnBase} onClick={() => setEditMode(true)}>
-              Edit Layout
-            </button>
-          )
-        )}
-      </div>
       {diagram
         ? renderer.render(diagram, {
             onNodeClick: editMode ? undefined : onNodeClick,
             onSettingsChange,
             editMode,
             onPositionsChange: editMode ? setPendingPositions : undefined,
-            resetKey: layoutKey,
+            resetKey,
+            onEnterEditMode: diagram ? () => setEditMode(true) : undefined,
+            onSaveLayout: editMode ? handleSaveLayout : undefined,
+            onResetLayout: editMode ? handleResetLayout : undefined,
+            onCancelEdit: editMode ? handleCancelEdit : undefined,
+            canSave,
           })
         : null}
     </div>

@@ -35,7 +35,9 @@ export class C4ApiClient implements C4Api {
   ): Promise<C4ViewDescriptor[] | { building: true }> {
     return (
       await this.options.fetchApi.fetch(
-        `${await this.base()}/entity/${kind}/${namespace}/${name}/views`,
+        `${await this.base()}/entity/${encodeURIComponent(
+          kind,
+        )}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/views`,
       )
     ).json();
   }
