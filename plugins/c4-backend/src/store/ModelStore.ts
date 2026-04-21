@@ -1,6 +1,16 @@
+import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import { Knex } from 'knex';
-import path from 'path';
-import { C4Actor, C4Diagram, C4DiagramLevel, C4Model, C4Node, C4Relationship, C4Source, C4ViewDescriptor } from '../types';
+import {
+  C4Actor,
+  C4Diagram,
+  C4DiagramLevel,
+  C4Model,
+  C4Node,
+  C4Relationship,
+  C4Source,
+  C4ViewDescriptor,
+  C4ViewDisplaySettings,
+} from '../types';
 
 /**
  * Primary data store for the C4 backend plugin.
@@ -17,7 +27,10 @@ export class ModelStore {
   /** Run pending DB migrations. Must be called once at plugin startup before any other method. */
   async migrate(): Promise<void> {
     await this.db.migrate.latest({
-      directory: path.join(__dirname, 'migrations'),
+      directory: resolvePackagePath(
+        '@fulgas/plugin-c4-backend',
+        'src/store/migrations',
+      ),
       loadExtensions: ['.ts', '.js'],
     });
   }
@@ -82,10 +95,23 @@ export class ModelStore {
    * Replaces all previously stored descriptors for the given `source` and
    * clears the diagram cache.
    */
-  async saveViewDescriptors(descriptors: C4ViewDescriptor[], source: C4Source): Promise<void> {
+  async saveViewDescriptors(
+    descriptors: C4ViewDescriptor[],
+    source: C4Source,
+  ): Promise<void> {
     this.cache.clear();
     await this.db.transaction(async trx => {
+      const oldRows = await trx('c4_view_descriptors')
+        .where({ source })
+        .select('id');
+      const oldIds: string[] = oldRows.map((r: any) => r.id);
+
       await trx('c4_view_descriptors').where({ source }).delete();
+
+      if (oldIds.length > 0) {
+        await trx('c4_node_positions').whereIn('view_id', oldIds).delete();
+      }
+
       for (const d of descriptors) {
         await trx('c4_view_descriptors').insert({
           id: d.id,
@@ -99,11 +125,19 @@ export class ModelStore {
   }
 
   /** Return all view descriptors, optionally filtered by owning Backstage entity ref. */
-  async getViewDescriptors(opts?: { entityRef?: string }): Promise<C4ViewDescriptor[]> {
+  async getViewDescriptors(opts?: {
+    entityRef?: string;
+  }): Promise<C4ViewDescriptor[]> {
     let query = this.db('c4_view_descriptors as vd')
       .leftJoin('c4_nodes as n', 'vd.subject_id', 'n.id')
-      .select('vd.*', 'n.depth as subject_depth');
-    if (opts?.entityRef) query = query.where({ 'vd.entity_ref': opts.entityRef });
+      .leftJoin('c4_view_settings as vs', 'vd.id', 'vs.view_id')
+      .select(
+        'vd.*',
+        'n.depth as subject_depth',
+        'vs.settings as display_settings',
+      );
+    if (opts?.entityRef)
+      query = query.where({ 'vd.entity_ref': opts.entityRef });
     const rows = await query;
     return rows.map(this.rowToDescriptor);
   }
@@ -112,7 +146,12 @@ export class ModelStore {
   async getViewDescriptor(id: string): Promise<C4ViewDescriptor | undefined> {
     const row = await this.db('c4_view_descriptors as vd')
       .leftJoin('c4_nodes as n', 'vd.subject_id', 'n.id')
-      .select('vd.*', 'n.depth as subject_depth')
+      .leftJoin('c4_view_settings as vs', 'vd.id', 'vs.view_id')
+      .select(
+        'vd.*',
+        'n.depth as subject_depth',
+        'vs.settings as display_settings',
+      )
       .where({ 'vd.id': id })
       .first();
     return row ? this.rowToDescriptor(row) : undefined;
@@ -139,7 +178,9 @@ export class ModelStore {
     const descriptor = await this.getViewDescriptor(viewId);
     if (!descriptor) return undefined;
 
-    const subjectRow = await this.db('c4_nodes').where({ id: descriptor.subjectId }).first();
+    const subjectRow = await this.db('c4_nodes')
+      .where({ id: descriptor.subjectId })
+      .first();
     if (!subjectRow) return undefined;
 
     const subjectDepth = subjectRow.depth as number;
@@ -147,7 +188,9 @@ export class ModelStore {
 
     let internalNodes: C4Node[];
     if (subjectDepth < 2) {
-      const rows = await this.db('c4_nodes').where({ parent_id: descriptor.subjectId });
+      const rows = await this.db('c4_nodes').where({
+        parent_id: descriptor.subjectId,
+      });
       internalNodes = rows.map(this.rowToNode);
     } else {
       internalNodes = [subjectNode];
@@ -155,9 +198,13 @@ export class ModelStore {
 
     const internalIds = new Set(internalNodes.map(n => n.id));
 
-    const relRows = await this.db('c4_relationships').where(function () {
-      this.whereIn('source_id', [...internalIds]).orWhereIn('target_id', [...internalIds]);
-    });
+    const relRows = await this.db('c4_relationships').where(
+      function whereRelated() {
+        this.whereIn('source_id', [...internalIds]).orWhereIn('target_id', [
+          ...internalIds,
+        ]);
+      },
+    );
     const allRelationships: C4Relationship[] = relRows.map((r: any) => ({
       id: r.id,
       sourceId: r.source_id,
@@ -177,12 +224,16 @@ export class ModelStore {
     let externalNodes: C4Node[] = [];
     const resolvedNodeIds = new Set<string>();
     if (externalCandidateIds.size > 0) {
-      const rows = await this.db('c4_nodes').whereIn('id', [...externalCandidateIds]);
+      const rows = await this.db('c4_nodes').whereIn('id', [
+        ...externalCandidateIds,
+      ]);
       externalNodes = rows.map(this.rowToNode);
       for (const n of externalNodes) resolvedNodeIds.add(n.id);
     }
 
-    const actorCandidateIds = [...externalCandidateIds].filter(id => !resolvedNodeIds.has(id));
+    const actorCandidateIds = [...externalCandidateIds].filter(
+      id => !resolvedNodeIds.has(id),
+    );
     let externalActors: C4Actor[] = [];
     if (actorCandidateIds.length > 0) {
       const rows = await this.db('c4_actors').whereIn('id', actorCandidateIds);
@@ -202,34 +253,117 @@ export class ModelStore {
     const seenIds = new Set<string>();
     const nodes: C4Node[] = [];
     for (const n of [subjectNode, ...internalNodes, ...externalNodes]) {
-      if (!seenIds.has(n.id)) { seenIds.add(n.id); nodes.push(n); }
+      if (!seenIds.has(n.id)) {
+        seenIds.add(n.id);
+        nodes.push(n);
+      }
     }
 
-    const diagram: C4Diagram = { descriptor, nodes, actors: externalActors, relationships };
+    const nodePositions = await this.getNodePositions(viewId);
+    const diagram: C4Diagram = {
+      descriptor,
+      nodes,
+      actors: externalActors,
+      relationships,
+      nodePositions,
+    };
     this.cache.set(viewId, diagram);
     return diagram;
+  }
+
+  async getNodePositions(
+    viewId: string,
+  ): Promise<Record<string, { x: number; y: number }>> {
+    const rows = await this.db('c4_node_positions').where({ view_id: viewId });
+    const result: Record<string, { x: number; y: number }> = {};
+    for (const row of rows) {
+      result[row.node_id] = { x: row.x, y: row.y };
+    }
+    return result;
+  }
+
+  async saveNodePositions(
+    viewId: string,
+    positions: Record<string, { x: number; y: number }>,
+  ): Promise<void> {
+    this.cache.delete(viewId);
+    await this.db.transaction(async trx => {
+      await trx('c4_node_positions').where({ view_id: viewId }).delete();
+      for (const [nodeId, pos] of Object.entries(positions)) {
+        await trx('c4_node_positions').insert({
+          view_id: viewId,
+          node_id: nodeId,
+          x: pos.x,
+          y: pos.y,
+        });
+      }
+    });
+  }
+
+  async clearNodePositions(viewId: string): Promise<void> {
+    this.cache.delete(viewId);
+    await this.db('c4_node_positions').where({ view_id: viewId }).delete();
+  }
+
+  /**
+   * Persist display settings for a view (direction, node/rank spacing).
+   * Upserts into `c4_view_settings` and invalidates the diagram cache entry.
+   */
+  async updateViewSettings(
+    viewId: string,
+    settings: C4ViewDisplaySettings,
+  ): Promise<void> {
+    this.cache.delete(viewId);
+    const exists = await this.db('c4_view_settings')
+      .where({ view_id: viewId })
+      .first();
+    if (exists) {
+      await this.db('c4_view_settings')
+        .where({ view_id: viewId })
+        .update({ settings: JSON.stringify(settings) });
+    } else {
+      await this.db('c4_view_settings').insert({
+        view_id: viewId,
+        settings: JSON.stringify(settings),
+      });
+    }
   }
 
   /**
    * Record the last sync time and status for a provider.
    * Uses an upsert so the first call for a new source creates the row.
    */
-  async updateSyncStatus(source: C4Source, status: 'ok' | 'error'): Promise<void> {
+  async updateSyncStatus(
+    source: C4Source,
+    status: 'ok' | 'error',
+  ): Promise<void> {
     const now = new Date().toISOString();
     const existing = await this.db('c4_sync_status').where({ source }).first();
     if (existing) {
-      await this.db('c4_sync_status').where({ source }).update({ last_sync: now, status });
+      await this.db('c4_sync_status')
+        .where({ source })
+        .update({ last_sync: now, status });
     } else {
-      await this.db('c4_sync_status').insert({ source, last_sync: now, status });
+      await this.db('c4_sync_status').insert({
+        source,
+        last_sync: now,
+        status,
+      });
     }
   }
 
   /** Return the last sync time and status for every registered source. */
-  async getSyncStatus(): Promise<Record<string, { lastSync: string | null; status: string }>> {
+  async getSyncStatus(): Promise<
+    Record<string, { lastSync: string | null; status: string }>
+  > {
     const rows = await this.db('c4_sync_status');
-    const result: Record<string, { lastSync: string | null; status: string }> = {};
+    const result: Record<string, { lastSync: string | null; status: string }> =
+      {};
     for (const row of rows) {
-      result[row.source] = { lastSync: row.last_sync ?? null, status: row.status };
+      result[row.source] = {
+        lastSync: row.last_sync ?? null,
+        status: row.status,
+      };
     }
     return result;
   }
@@ -260,8 +394,18 @@ export class ModelStore {
 
   private rowToDescriptor(row: any): C4ViewDescriptor {
     const depth: number = row.subject_depth ?? 0;
-    const level: C4DiagramLevel =
-      depth === 0 ? 'landscape' : depth === 1 ? 'context' : 'container';
+    let level: C4DiagramLevel;
+    if (depth === 0) level = 'landscape';
+    else if (depth === 1) level = 'context';
+    else level = 'container';
+    let displaySettings: C4ViewDisplaySettings | undefined;
+    if (row.display_settings) {
+      try {
+        displaySettings = JSON.parse(row.display_settings);
+      } catch {
+        /* ignore */
+      }
+    }
     return {
       id: row.id,
       title: row.title,
@@ -269,6 +413,7 @@ export class ModelStore {
       entityRef: row.entity_ref ?? undefined,
       source: row.source,
       level,
+      displaySettings,
     };
   }
 }

@@ -9,31 +9,24 @@ function mockFetch(body: unknown): jest.Mocked<FetchApi> {
 }
 
 describe('C4ApiClient', () => {
-  it('getViews calls GET /views', async () => {
+  it('getViewDescriptors calls GET /views', async () => {
     const fetchApi = mockFetch([]);
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
-    await client.getViews();
+    await client.getViewDescriptors();
     expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/views');
   });
 
-  it('getViews passes level param', async () => {
-    const fetchApi = mockFetch([]);
+  it('getDiagram calls GET /views/:id', async () => {
+    const fetchApi = mockFetch({});
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
-    await client.getViews({ level: 'landscape' });
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/views?level=landscape');
+    await client.getDiagram('v1');
+    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/views/v1');
   });
 
-  it('getLandscape calls GET /landscape', async () => {
-    const fetchApi = mockFetch({ view: {}, model: {} });
-    const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
-    await client.getLandscape();
-    expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/landscape');
-  });
-
-  it('getEntityViews calls correct URL', async () => {
+  it('getEntityViewDescriptors calls correct URL', async () => {
     const fetchApi = mockFetch([]);
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
-    await client.getEntityViews('system', 'default', 'my-system');
+    await client.getEntityViewDescriptors('system', 'default', 'my-system');
     expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/entity/system/default/my-system/views');
   });
 
@@ -42,5 +35,35 @@ describe('C4ApiClient', () => {
     const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
     await client.triggerSync();
     expect(fetchApi.fetch).toHaveBeenCalledWith('http://localhost:7007/api/c4/sync', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('updateViewSettings calls PATCH /views/:id/settings', async () => {
+    const fetchApi = mockFetch(undefined);
+    const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
+    await client.updateViewSettings('v1', { direction: 'LR' });
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/views/v1/settings',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
+
+  it('saveNodePositions calls PUT /views/:id/positions', async () => {
+    const fetchApi = mockFetch({ status: 'ok' });
+    const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
+    await client.saveNodePositions('v1', { 'node-a': { x: 10, y: 20 } });
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/views/v1/positions',
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('resetNodePositions calls DELETE /views/:id/positions', async () => {
+    const fetchApi = mockFetch({ status: 'ok' });
+    const client = new C4ApiClient({ discoveryApi: mockDiscovery(), fetchApi });
+    await client.resetNodePositions('v1');
+    expect(fetchApi.fetch).toHaveBeenCalledWith(
+      'http://localhost:7007/api/c4/views/v1/positions',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 });

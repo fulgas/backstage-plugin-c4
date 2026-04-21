@@ -12,7 +12,9 @@ let syncInProgress = false;
 function triggerSyncOnce(syncFn: () => Promise<void>) {
   if (syncInProgress) return;
   syncInProgress = true;
-  Promise.resolve(syncFn()).finally(() => { syncInProgress = false; });
+  Promise.resolve(syncFn()).finally(() => {
+    syncInProgress = false;
+  });
 }
 
 export async function createRouter(options: RouterOptions): Promise<Router> {
@@ -29,7 +31,9 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
         return;
       }
       res.json(descriptors);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.get('/views/:id', async (req: Request, res: Response, next) => {
@@ -37,39 +41,95 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       const diagram = await store.computeDiagram(req.params.id);
       if (!diagram) throw new NotFoundError(`View ${req.params.id} not found`);
       res.json(diagram);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
-  router.get('/entity/:kind/:namespace/:name/views', async (req: Request, res: Response, next) => {
-    try {
-      const allDescriptors = await store.getViewDescriptors();
-      if (allDescriptors.length === 0) {
-        triggerSyncOnce(syncFn);
-        res.status(202).json({ building: true });
-        return;
+  router.get(
+    '/entity/:kind/:namespace/:name/views',
+    async (req: Request, res: Response, next) => {
+      try {
+        const allDescriptors = await store.getViewDescriptors();
+        if (allDescriptors.length === 0) {
+          triggerSyncOnce(syncFn);
+          res.status(202).json({ building: true });
+          return;
+        }
+        const { kind, namespace, name } = req.params;
+        const descriptors = await store.getViewDescriptors({
+          entityRef: `${kind}:${namespace}/${name}`,
+        });
+        res.json(descriptors);
+      } catch (err) {
+        next(err);
       }
-      const { kind, namespace, name } = req.params;
-      const descriptors = await store.getViewDescriptors({ entityRef: `${kind}:${namespace}/${name}` });
-      res.json(descriptors);
-    } catch (err) { next(err); }
-  });
+    },
+  );
+
+  router.patch(
+    '/views/:id/settings',
+    async (req: Request, res: Response, next) => {
+      try {
+        const { direction, nodeSep, rankSep } = req.body ?? {};
+        await store.updateViewSettings(req.params.id, {
+          direction,
+          nodeSep,
+          rankSep,
+        });
+        res.json({ status: 'ok' });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.put(
+    '/views/:id/positions',
+    async (req: Request, res: Response, next) => {
+      try {
+        const positions = req.body?.positions ?? {};
+        await store.saveNodePositions(req.params.id, positions);
+        res.json({ status: 'ok' });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.delete(
+    '/views/:id/positions',
+    async (req: Request, res: Response, next) => {
+      try {
+        await store.clearNodePositions(req.params.id);
+        res.json({ status: 'ok' });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
   router.post('/sync', async (_req: Request, res: Response, next) => {
     try {
       syncFn().catch(() => {});
       res.json({ status: 'started' });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.get('/health', async (_req: Request, res: Response, next) => {
     try {
       const syncStatus = await store.getSyncStatus();
       res.json({ status: 'ok', syncStatus });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.use((err: Error, _req: Request, res: Response, _next: any) => {
-    if (err.name === 'NotFoundError') res.status(404).json({ error: err.message });
+    if (err.name === 'NotFoundError')
+      res.status(404).json({ error: err.message });
     else res.status(500).json({ error: err.message });
   });
 

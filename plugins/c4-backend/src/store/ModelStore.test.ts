@@ -1,6 +1,6 @@
 import { TestDatabases } from '@backstage/backend-test-utils';
-import { ModelStore } from './ModelStore';
 import { C4Model, C4ViewDescriptor } from '../types';
+import { ModelStore } from './ModelStore';
 
 const databases = TestDatabases.create();
 
@@ -8,8 +8,17 @@ function makeModel(overrides: Partial<C4Model> = {}): C4Model {
   return { nodes: [], actors: [], relationships: [], ...overrides };
 }
 
-function makeDescriptor(overrides: Partial<C4ViewDescriptor> = {}): C4ViewDescriptor {
-  return { id: 'view-1', title: 'My View', subjectId: 'domain:default/my-domain', entityRef: 'domain:default/my-domain', source: 'catalog', ...overrides };
+function makeDescriptor(
+  overrides: Partial<C4ViewDescriptor> = {},
+): C4ViewDescriptor {
+  return {
+    id: 'view-1',
+    title: 'My View',
+    subjectId: 'domain:default/my-domain',
+    entityRef: 'domain:default/my-domain',
+    source: 'catalog',
+    ...overrides,
+  };
 }
 
 describe('ModelStore', () => {
@@ -39,12 +48,25 @@ describe('ModelStore', () => {
     const store = new ModelStore(knex);
     await store.migrate();
 
-    await store.saveViewDescriptors([
-      makeDescriptor({ id: 'v1', entityRef: 'domain:default/foo', subjectId: 'domain:default/foo' }),
-      makeDescriptor({ id: 'v2', entityRef: 'domain:default/bar', subjectId: 'domain:default/bar' }),
-    ], 'catalog');
+    await store.saveViewDescriptors(
+      [
+        makeDescriptor({
+          id: 'v1',
+          entityRef: 'domain:default/foo',
+          subjectId: 'domain:default/foo',
+        }),
+        makeDescriptor({
+          id: 'v2',
+          entityRef: 'domain:default/bar',
+          subjectId: 'domain:default/bar',
+        }),
+      ],
+      'catalog',
+    );
 
-    const results = await store.getViewDescriptors({ entityRef: 'domain:default/foo' });
+    const results = await store.getViewDescriptors({
+      entityRef: 'domain:default/foo',
+    });
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('v1');
   });
@@ -54,8 +76,21 @@ describe('ModelStore', () => {
     const store = new ModelStore(knex);
     await store.migrate();
 
-    const domain = { id: 'domain:default/my-domain', depth: 0, name: 'My Domain', description: '', tags: [] as string[] };
-    const system = { id: 'system:default/my-system', parentId: 'domain:default/my-domain', depth: 1, name: 'My System', description: '', tags: [] as string[] };
+    const domain = {
+      id: 'domain:default/my-domain',
+      depth: 0,
+      name: 'My Domain',
+      description: '',
+      tags: [] as string[],
+    };
+    const system = {
+      id: 'system:default/my-system',
+      parentId: 'domain:default/my-domain',
+      depth: 1,
+      name: 'My System',
+      description: '',
+      tags: [] as string[],
+    };
     await store.saveModel(makeModel({ nodes: [domain, system] }), 'catalog');
 
     const desc = makeDescriptor({ subjectId: 'domain:default/my-domain' });
@@ -63,7 +98,9 @@ describe('ModelStore', () => {
 
     const diagram = await store.computeDiagram('view-1');
     expect(diagram).toBeDefined();
-    expect(diagram!.nodes.some(n => n.id === 'system:default/my-system')).toBe(true);
+    expect(diagram!.nodes.some(n => n.id === 'system:default/my-system')).toBe(
+      true,
+    );
   });
 
   it('computeDiagram returns undefined for unknown viewId', async () => {
@@ -78,9 +115,18 @@ describe('ModelStore', () => {
     const store = new ModelStore(knex);
     await store.migrate();
 
-    const domain = { id: 'domain:default/d1', depth: 0, name: 'D1', description: '', tags: [] as string[] };
+    const domain = {
+      id: 'domain:default/d1',
+      depth: 0,
+      name: 'D1',
+      description: '',
+      tags: [] as string[],
+    };
     await store.saveModel(makeModel({ nodes: [domain] }), 'catalog');
-    await store.saveViewDescriptors([makeDescriptor({ subjectId: 'domain:default/d1' })], 'catalog');
+    await store.saveViewDescriptors(
+      [makeDescriptor({ subjectId: 'domain:default/d1' })],
+      'catalog',
+    );
 
     // First compute — populates cache
     const first = await store.computeDiagram('view-1');
@@ -92,7 +138,9 @@ describe('ModelStore', () => {
 
     // Cache should be cleared
     const second = await store.computeDiagram('view-1');
-    expect(second!.nodes.find(n => n.id === 'domain:default/d1')!.name).toBe('D1 Updated');
+    expect(second!.nodes.find(n => n.id === 'domain:default/d1')!.name).toBe(
+      'D1 Updated',
+    );
   });
 
   it('getSyncStatus returns empty object on fresh DB', async () => {
@@ -122,12 +170,101 @@ describe('ModelStore', () => {
     const store = new ModelStore(knex);
     await store.migrate();
 
-    await store.saveViewDescriptors([makeDescriptor({ id: 'old-view', subjectId: 'domain:default/d' })], 'catalog');
-    await store.saveViewDescriptors([makeDescriptor({ id: 'new-view', subjectId: 'domain:default/d' })], 'catalog');
+    await store.saveViewDescriptors(
+      [makeDescriptor({ id: 'old-view', subjectId: 'domain:default/d' })],
+      'catalog',
+    );
+    await store.saveViewDescriptors(
+      [makeDescriptor({ id: 'new-view', subjectId: 'domain:default/d' })],
+      'catalog',
+    );
 
     const results = await store.getViewDescriptors();
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('new-view');
   });
-});
 
+  describe('node positions', () => {
+    it('getNodePositions returns empty object when no positions saved', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      expect(await store.getNodePositions('view-1')).toEqual({});
+    });
+
+    it('saveNodePositions + getNodePositions round-trips positions', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveNodePositions('view-1', {
+        'node-a': { x: 100, y: 200 },
+        'node-b': { x: 300, y: 400 },
+      });
+      const positions = await store.getNodePositions('view-1');
+      expect(positions['node-a']).toEqual({ x: 100, y: 200 });
+      expect(positions['node-b']).toEqual({ x: 300, y: 400 });
+    });
+
+    it('saveNodePositions replaces all existing positions for the view', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveNodePositions('view-1', { 'node-a': { x: 1, y: 2 } });
+      await store.saveNodePositions('view-1', { 'node-b': { x: 3, y: 4 } });
+      const positions = await store.getNodePositions('view-1');
+      expect(positions['node-a']).toBeUndefined();
+      expect(positions['node-b']).toEqual({ x: 3, y: 4 });
+    });
+
+    it('clearNodePositions removes all positions for the view', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveNodePositions('view-1', { 'node-a': { x: 1, y: 2 } });
+      await store.clearNodePositions('view-1');
+      expect(await store.getNodePositions('view-1')).toEqual({});
+    });
+
+    it('saveNodePositions invalidates the diagram cache', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const domain = {
+        id: 'domain:default/d',
+        depth: 0,
+        name: 'D',
+        description: '',
+        tags: [] as string[],
+      };
+      await store.saveModel(
+        { nodes: [domain], actors: [], relationships: [] },
+        'catalog',
+      );
+      await store.saveViewDescriptors(
+        [makeDescriptor({ subjectId: 'domain:default/d' })],
+        'catalog',
+      );
+
+      const first = await store.computeDiagram('view-1');
+      expect(first?.nodePositions).toEqual({});
+
+      await store.saveNodePositions('view-1', { 'node-a': { x: 10, y: 20 } });
+      const second = await store.computeDiagram('view-1');
+      expect(second?.nodePositions['node-a']).toEqual({ x: 10, y: 20 });
+    });
+
+    it('saveViewDescriptors clears positions for replaced views', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      await store.saveViewDescriptors([makeDescriptor()], 'catalog');
+      await store.saveNodePositions('view-1', { n: { x: 1, y: 2 } });
+
+      // Re-sync replaces the view descriptor
+      await store.saveViewDescriptors([makeDescriptor()], 'catalog');
+      expect(await store.getNodePositions('view-1')).toEqual({});
+    });
+  });
+});

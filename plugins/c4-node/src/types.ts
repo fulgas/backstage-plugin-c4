@@ -89,6 +89,21 @@ export interface C4Model {
 }
 
 /**
+ * Shared display preferences for a diagram view.
+ *
+ * Stored in `c4_view_settings` and returned as part of every `C4ViewDescriptor`
+ * so all users loading the same diagram see the same layout choices.
+ */
+export interface C4ViewDisplaySettings {
+  /** Layout direction. Defaults to `'auto'` when not set. */
+  direction?: 'TB' | 'LR' | 'auto';
+  /** ELK node separation in pixels (horizontal gap between nodes). */
+  nodeSep?: number;
+  /** ELK rank separation in pixels (vertical gap between layers). */
+  rankSep?: number;
+}
+
+/**
  * A thin descriptor stored in the DB that declares a diagram exists.
  *
  * The actual diagram content (nodes, relationships) is **not** stored here —
@@ -112,12 +127,15 @@ export interface C4ViewDescriptor {
   /**
    * Diagram level derived from the subject node's depth at read time.
    * Not stored in the DB — computed via join with `c4_nodes`.
+   * Optional when constructing a descriptor before persisting; always present after reading from DB.
    */
-  level: C4DiagramLevel;
+  level?: C4DiagramLevel;
   /** The Backstage entity that "owns" this diagram (used for entity page lookup). */
   entityRef?: string;
   /** Provider that generated this descriptor, e.g. `'catalog'` or `'dsl'`. */
   source: C4Source;
+  /** Shared display preferences (direction, spacing). Saved by users, shared across all viewers. */
+  displaySettings?: C4ViewDisplaySettings;
 }
 
 /**
@@ -140,4 +158,9 @@ export interface C4Diagram {
   actors: C4Actor[];
   /** Only edges where both sides are present in `nodes` or `actors`. */
   relationships: C4Relationship[];
+  /**
+   * Saved node positions keyed by React Flow node ID (includes boundary node
+   * `__boundary__<subjectId>`). Empty object means no layout is saved — use ELK.
+   */
+  nodePositions: Record<string, { x: number; y: number }>;
 }

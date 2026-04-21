@@ -1,5 +1,5 @@
 import { createApiRef } from '@backstage/core-plugin-api';
-import { C4Diagram, C4ViewDescriptor } from '../types';
+import { C4Diagram, C4ViewDescriptor, C4ViewDisplaySettings } from '../types';
 
 /**
  * Frontend API for the C4 backend plugin.
@@ -28,6 +28,24 @@ export interface C4Api {
 
   /** Trigger an out-of-schedule sync on the backend. */
   triggerSync(): Promise<{ status: string }>;
+
+  /**
+   * Persist display settings (direction, spacing) for a view.
+   * Settings are shared across all users viewing the same diagram.
+   */
+  updateViewSettings(viewId: string, settings: C4ViewDisplaySettings): Promise<void>;
+
+  /**
+   * Persist node positions for a view. Positions are keyed by React Flow node ID.
+   * Replaces any previously saved positions for the view.
+   * Settings are shared across all users viewing the same diagram.
+   */
+  saveNodePositions(viewId: string, positions: Record<string, { x: number; y: number }>): Promise<void>;
+
+  /**
+   * Clear all saved node positions for a view, reverting to ELK auto-layout.
+   */
+  resetNodePositions(viewId: string): Promise<void>;
 }
 
 export const c4ApiRef = createApiRef<C4Api>({ id: 'plugin.c4.service' });

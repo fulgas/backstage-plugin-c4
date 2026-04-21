@@ -27,12 +27,59 @@ export class C4ApiClient implements C4Api {
     return this.get(`/views/${encodeURIComponent(id)}`);
   }
 
-  async getEntityViewDescriptors(kind: string, namespace: string, name: string): Promise<C4ViewDescriptor[] | { building: true }> {
-    return this.get(`/entity/${encodeURIComponent(kind)}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/views`);
+  async getEntityViewDescriptors(
+    kind: string,
+    namespace: string,
+    name: string,
+  ): Promise<C4ViewDescriptor[] | { building: true }> {
+    return this.get(
+      `/entity/${encodeURIComponent(kind)}/${encodeURIComponent(
+        namespace,
+      )}/${encodeURIComponent(name)}/views`,
+    );
   }
 
   async triggerSync(): Promise<{ status: string }> {
-    const res = await this.fetchApi.fetch(`${await this.base()}/sync`, { method: 'POST' });
+    const res = await this.fetchApi.fetch(`${await this.base()}/sync`, {
+      method: 'POST',
+    });
     return res.json();
+  }
+
+  async updateViewSettings(
+    viewId: string,
+    settings: import('@fulgas/plugin-c4-node').C4ViewDisplaySettings,
+  ): Promise<void> {
+    await this.fetchApi.fetch(
+      `${await this.base()}/views/${encodeURIComponent(viewId)}/settings`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      },
+    );
+  }
+
+  async saveNodePositions(
+    viewId: string,
+    positions: Record<string, { x: number; y: number }>,
+  ): Promise<void> {
+    await this.fetchApi.fetch(
+      `${await this.base()}/views/${encodeURIComponent(viewId)}/positions`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ positions }),
+      },
+    );
+  }
+
+  async resetNodePositions(viewId: string): Promise<void> {
+    await this.fetchApi.fetch(
+      `${await this.base()}/views/${encodeURIComponent(viewId)}/positions`,
+      {
+        method: 'DELETE',
+      },
+    );
   }
 }
