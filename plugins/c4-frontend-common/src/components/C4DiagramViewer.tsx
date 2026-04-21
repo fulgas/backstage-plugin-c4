@@ -80,6 +80,13 @@ export function C4DiagramViewer({
     setResetKey(k => k + 1);
   };
 
+  const handleSettingsChange = async (settings: C4ViewDisplaySettings) => {
+    if (!viewId) return;
+    await api.updateViewSettings(viewId, settings);
+    await mutate(`c4-diagram-${viewId}`);
+    onSettingsChange?.(settings);
+  };
+
   if (loading) return <Progress />;
   if (error) return <ErrorPanel error={error} />;
   return (
@@ -87,7 +94,7 @@ export function C4DiagramViewer({
       {diagram
         ? renderer.render(diagram, {
             onNodeClick: editMode ? undefined : onNodeClick,
-            onSettingsChange,
+            onSettingsChange: handleSettingsChange,
             editMode,
             onPositionsChange: editMode ? setPendingPositions : undefined,
             resetKey,

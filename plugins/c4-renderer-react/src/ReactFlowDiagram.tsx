@@ -153,21 +153,30 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
 
   const resetKey = options?.resetKey;
 
+  const savedDirection = diagram.descriptor.displaySettings?.direction;
+  const direction: 'TB' | 'LR' | 'auto' =
+    savedDirection === 'LR' ? 'LR' : savedDirection === 'auto' ? 'auto' : 'TB';
+
   useEffect(() => {
     setFlow(null);
     let cancelled = false;
-    elkLayout(diagram).then(result => {
+    elkLayout(diagram, {
+      direction: direction === 'auto' ? 'auto' : direction,
+    }).then(result => {
       if (!cancelled) {
         const hasSaved = Object.keys(diagram.nodePositions ?? {}).length > 0;
-        setFlow(
-          hasSaved ? applyPositions(result, diagram.nodePositions) : result,
-        );
+        if (hasSaved) {
+          const withPos = applyPositions(result, diagram.nodePositions);
+          setFlow({ ...withPos, nodes: resizeBoundary(withPos.nodes) });
+        } else {
+          setFlow(result);
+        }
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [diagram, resetKey]);
+  }, [diagram, resetKey, direction]);
 
   const editMode = options?.editMode ?? false;
 
@@ -176,9 +185,7 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     setFlow(prev => {
       if (!prev) return prev;
       const hasPositionChange = changes.some(c => c.type === 'position');
-      const nodes = hasPositionChange
-        ? resizeBoundary(applyNodeChanges(changes, prev.nodes))
-        : applyNodeChanges(changes, prev.nodes);
+      const nodes = applyNodeChanges(changes, prev.nodes);
       if (hasPositionChange) {
         const positions: Record<string, { x: number; y: number }> = {};
         for (const n of nodes) positions[n.id] = n.position;
@@ -210,7 +217,9 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     () =>
       editMode
         ? (flow?.nodes ?? []).map(n =>
-            n.type === 'boundary' ? n : { ...n, draggable: true },
+            n.type === 'boundary'
+              ? { ...n, draggable: true, data: { ...n.data, editMode: true } }
+              : { ...n, draggable: true },
           )
         : flow?.nodes ?? [],
     [flow?.nodes, editMode],
@@ -282,6 +291,41 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       >
         <Controls showInteractive={false}>
           <DownloadButton title={diagram.descriptor.title} />
+          {!editMode && (
+            <>
+              <ControlButton
+                title="Auto layout (ELK decides direction)"
+                onClick={() =>
+                  options?.onSettingsChange?.({ direction: 'auto' })
+                }
+                style={{
+                  opacity: direction === 'auto' ? 1 : 0.45,
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+              >
+                A
+              </ControlButton>
+              <ControlButton
+                title="Vertical layout (top-to-bottom)"
+                onClick={() => options?.onSettingsChange?.({ direction: 'TB' })}
+                style={{ opacity: direction === 'TB' ? 1 : 0.45 }}
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1" />
+                </svg>
+              </ControlButton>
+              <ControlButton
+                title="Horizontal layout (left-to-right)"
+                onClick={() => options?.onSettingsChange?.({ direction: 'LR' })}
+                style={{ opacity: direction === 'LR' ? 1 : 0.45 }}
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8" />
+                </svg>
+              </ControlButton>
+            </>
+          )}
           {editMode ? (
             <>
               <ControlButton

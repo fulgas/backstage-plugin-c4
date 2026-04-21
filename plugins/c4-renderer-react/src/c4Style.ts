@@ -26,8 +26,8 @@ export const COLOR_EXTERNAL = '#999999';
 /** Database container (subType === 'database'). */
 export const COLOR_DATABASE = '#0b6e4f';
 
-/** Text colour used on all filled elements. */
-export const COLOR_TEXT_ON_FILL = '#FFFFFF';
+/** Queue/message-bus container (subType === 'queue'). */
+export const COLOR_QUEUE = '#1168BD';
 
 // ── Boundary ─────────────────────────────────────────────────────────────────
 
@@ -66,27 +66,11 @@ export const RELATIONSHIP_MARKER_SIZE = 16;
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-/**
- * Layout direction for the graph.
- *
- * C4 model convention (Simon Brown) and Structurizr default: **top-to-bottom**.
- * Used by the dagre engine (`rankdir`) and the ELK engine (`elk.direction: DOWN`).
- *
- * Reference: https://c4model.com/#Examples
- */
-export const LAYOUT_DIRECTION: 'LR' | 'TB' = 'TB';
-
 /** Width of a standard C4 node box — must match the `width` in C4NodeTypes BASE style. */
 export const NODE_W = 180;
 
-/** Height hint for dagre — accounts for name + technology + description lines. */
+/** Height of a standard C4 node box. */
 export const NODE_H = 100;
 
 /** Padding around internal nodes inside the boundary. */
 export const BOUNDARY_PAD = 60;
-
-/** Dagre rank separation (distance between node columns/rows). */
-export const RANK_SEP = 120;
-
-/** Dagre node separation (distance between sibling nodes). */
-export const NODE_SEP = 60;
