@@ -267,4 +267,364 @@ describe('ModelStore', () => {
       expect(await store.getNodePositions('view-1')).toEqual({});
     });
   });
+
+  describe('updateViewSettings', () => {
+    it('creates settings on first call', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveViewDescriptors([makeDescriptor()], 'catalog');
+
+      await store.updateViewSettings('view-1', { direction: 'LR' });
+
+      const descriptors = await store.getViewDescriptors();
+      expect(descriptors[0].displaySettings?.direction).toBe('LR');
+    });
+
+    it('merges partial patch without wiping existing keys', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveViewDescriptors([makeDescriptor()], 'catalog');
+
+      await store.updateViewSettings('view-1', { direction: 'LR' });
+      await store.updateViewSettings('view-1', { nodeSep: 120 });
+
+      const descriptors = await store.getViewDescriptors();
+      expect(descriptors[0].displaySettings?.direction).toBe('LR');
+      expect(descriptors[0].displaySettings?.nodeSep).toBe(120);
+    });
+
+    it('overwrites only the patched key on second call', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+      await store.saveViewDescriptors([makeDescriptor()], 'catalog');
+
+      await store.updateViewSettings('view-1', {
+        direction: 'LR',
+        nodeSep: 80,
+      });
+      await store.updateViewSettings('view-1', { direction: 'TB' });
+
+      const descriptors = await store.getViewDescriptors();
+      expect(descriptors[0].displaySettings?.direction).toBe('TB');
+      expect(descriptors[0].displaySettings?.nodeSep).toBe(80);
+    });
+
+    it('invalidates diagram cache', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const domain = {
+        id: 'domain:default/d',
+        depth: 0,
+        name: 'D',
+        description: '',
+        tags: [] as string[],
+      };
+      await store.saveModel(
+        { nodes: [domain], actors: [], relationships: [] },
+        'catalog',
+      );
+      await store.saveViewDescriptors(
+        [makeDescriptor({ subjectId: 'domain:default/d' })],
+        'catalog',
+      );
+
+      const before = await store.computeDiagram('view-1');
+      expect(before?.descriptor.displaySettings).toBeUndefined();
+
+      await store.updateViewSettings('view-1', { direction: 'LR' });
+
+      const after = await store.computeDiagram('view-1');
+      expect(after?.descriptor.displaySettings?.direction).toBe('LR');
+    });
+  });
+
+  describe('subcomponent support', () => {
+    it('computeDiagram for parent component includes depth-3 subcomponents', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const system = {
+        id: 'system:default/s',
+        depth: 1,
+        name: 'S',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const component = {
+        id: 'component:default/payment-service',
+        parentId: 'system:default/s',
+        depth: 2,
+        name: 'Payment Service',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const subA = {
+        id: 'component:default/gateway-client',
+        parentId: 'component:default/payment-service',
+        depth: 3,
+        name: 'Gateway Client',
+        description: '',
+        navigable: false,
+        tags: [] as string[],
+      };
+      const subB = {
+        id: 'component:default/fraud-checker',
+        parentId: 'component:default/payment-service',
+        depth: 3,
+        name: 'Fraud Checker',
+        description: '',
+        navigable: false,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(
+        makeModel({ nodes: [system, component, subA, subB] }),
+        'catalog',
+      );
+      await store.saveViewDescriptors(
+        [
+          makeDescriptor({
+            id: 'comp-view',
+            subjectId: 'component:default/payment-service',
+            entityRef: 'component:default/payment-service',
+          }),
+        ],
+        'catalog',
+      );
+
+      const diagram = await store.computeDiagram('comp-view');
+      expect(diagram).toBeDefined();
+      const nodeIds = diagram!.nodes.map(n => n.id);
+      expect(nodeIds).toContain('component:default/gateway-client');
+      expect(nodeIds).toContain('component:default/fraud-checker');
+    });
+
+    it('getViewDescriptors returns level=component when subject has depth-3 children', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const component = {
+        id: 'component:default/payment-service',
+        parentId: 'system:default/s',
+        depth: 2,
+        name: 'Payment Service',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const sub = {
+        id: 'component:default/gateway-client',
+        parentId: 'component:default/payment-service',
+        depth: 3,
+        name: 'Gateway Client',
+        description: '',
+        navigable: false,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(makeModel({ nodes: [component, sub] }), 'catalog');
+      await store.saveViewDescriptors(
+        [
+          makeDescriptor({
+            id: 'comp-view',
+            subjectId: 'component:default/payment-service',
+            entityRef: 'component:default/payment-service',
+          }),
+        ],
+        'catalog',
+      );
+
+      const descriptors = await store.getViewDescriptors();
+      expect(descriptors[0].level).toBe('component');
+    });
+
+    it('getViewDescriptors returns level=container when subject has no depth-3 children', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const component = {
+        id: 'component:default/api-service',
+        parentId: 'system:default/s',
+        depth: 2,
+        name: 'API Service',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(makeModel({ nodes: [component] }), 'catalog');
+      await store.saveViewDescriptors(
+        [
+          makeDescriptor({
+            id: 'api-view',
+            subjectId: 'component:default/api-service',
+            entityRef: 'component:default/api-service',
+          }),
+        ],
+        'catalog',
+      );
+
+      const descriptors = await store.getViewDescriptors();
+      expect(descriptors[0].level).toBe('container');
+    });
+  });
+
+  describe('subdomain support', () => {
+    it('computeDiagram for parent domain includes subdomain and its systems', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const parentDomain = {
+        id: 'domain:default/retail',
+        depth: 0,
+        name: 'Retail',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const subdomain = {
+        id: 'domain:default/payments',
+        parentId: 'domain:default/retail',
+        depth: 0,
+        name: 'Payments',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const directSystem = {
+        id: 'system:default/storefront',
+        parentId: 'domain:default/retail',
+        depth: 1,
+        name: 'Storefront',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const subdomainSystem = {
+        id: 'system:default/payment-processing',
+        parentId: 'domain:default/payments',
+        depth: 1,
+        name: 'Payment Processing',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(
+        makeModel({
+          nodes: [parentDomain, subdomain, directSystem, subdomainSystem],
+        }),
+        'catalog',
+      );
+      await store.saveViewDescriptors(
+        [
+          makeDescriptor({
+            id: 'retail-view',
+            subjectId: 'domain:default/retail',
+            entityRef: 'domain:default/retail',
+          }),
+        ],
+        'catalog',
+      );
+
+      const diagram = await store.computeDiagram('retail-view');
+      expect(diagram).toBeDefined();
+      const nodeIds = diagram!.nodes.map(n => n.id);
+      expect(nodeIds).toContain('domain:default/payments');
+      expect(nodeIds).toContain('system:default/storefront');
+      expect(nodeIds).toContain('system:default/payment-processing');
+    });
+  });
+
+  describe('navigable field', () => {
+    it('persists navigable=true for domain and system in landscape diagram', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const domain = {
+        id: 'domain:default/d',
+        depth: 0,
+        name: 'D',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const system = {
+        id: 'system:default/s',
+        parentId: 'domain:default/d',
+        depth: 1,
+        name: 'S',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(makeModel({ nodes: [domain, system] }), 'catalog');
+      await store.saveViewDescriptors(
+        [makeDescriptor({ subjectId: 'domain:default/d' })],
+        'catalog',
+      );
+
+      const diagram = await store.computeDiagram('view-1');
+      expect(
+        diagram!.nodes.find(n => n.id === 'domain:default/d')!.navigable,
+      ).toBe(true);
+      expect(
+        diagram!.nodes.find(n => n.id === 'system:default/s')!.navigable,
+      ).toBe(true);
+    });
+
+    it('persists navigable=false for Resource in context diagram', async () => {
+      const knex = await databases.init('SQLITE_3');
+      const store = new ModelStore(knex);
+      await store.migrate();
+
+      const system = {
+        id: 'system:default/s',
+        parentId: 'domain:default/d',
+        depth: 1,
+        name: 'S',
+        description: '',
+        navigable: true,
+        tags: [] as string[],
+      };
+      const resource = {
+        id: 'resource:default/r',
+        parentId: 'system:default/s',
+        depth: 2,
+        name: 'R',
+        description: '',
+        navigable: false,
+        subType: 'database' as const,
+        tags: [] as string[],
+      };
+
+      await store.saveModel(
+        makeModel({ nodes: [system, resource] }),
+        'catalog',
+      );
+      await store.saveViewDescriptors(
+        [makeDescriptor({ id: 'view-1', subjectId: 'system:default/s' })],
+        'catalog',
+      );
+
+      const diagram = await store.computeDiagram('view-1');
+      const resNode = diagram!.nodes.find(n => n.id === 'resource:default/r');
+      expect(resNode).toBeDefined();
+      expect(resNode!.navigable).toBe(false);
+      expect(resNode!.subType).toBe('database');
+    });
+  });
 });

@@ -1,0 +1,41 @@
+@layer components {
+  .buildingContainer {
+    padding: var(--bui-space-8);
+    gap: var(--bui-space-4);
+  }
+
+  .backLink {
+    margin-bottom: var(--bui-space-3);
+  }
+
+  .filterBox {
+    padding: var(--bui-space-2) var(--bui-space-4);
+  }
+
+  .filterLabel {
+    color: var(--bui-fg-secondary);
+    margin-bottom: var(--bui-space-1);
+    display: block;
+  }
+
+  .filterList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .filterItem {
+    padding: var(--bui-space-1) var(--bui-space-2);
+    border-radius: var(--bui-radius-2);
+    cursor: pointer;
+  }
+
+  .filterItem:hover {
+    background: var(--bui-bg-hover);
+  }
+
+  .filterItemSelected {
+    background: var(--bui-bg-hover);
+    font-weight: var(--bui-font-weight-bold);
+  }
+}

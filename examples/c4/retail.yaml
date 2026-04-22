@@ -1,0 +1,306 @@
+# ── Retail Domain ─────────────────────────────────────────────────────────────
+# Customer-facing e-commerce: storefront + ordering systems.
+# Cross-domain: ordering consumes platform/auth-api.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: retail
+  description: Customer-facing e-commerce storefront and order management
+  tags: [c4]
+spec:
+  owner: guests
+---
+# ── Payments Subdomain (nested inside retail) ─────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: payments
+  description: Payment processing and fraud detection
+  tags: [c4]
+spec:
+  owner: guests
+  subdomainOf: retail
+---
+# ── Systems ───────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: storefront
+  description: Public-facing web storefront serving product catalog and cart
+  tags: [c4]
+spec:
+  owner: guests
+  domain: retail
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: ordering
+  description: Processes and tracks customer orders end-to-end
+  tags: [c4]
+spec:
+  owner: guests
+  domain: retail
+---
+# ── Storefront components ─────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: web-app
+  description: React single-page application served to customers
+  tags: [c4, frontend]
+spec:
+  type: website
+  lifecycle: production
+  owner: guests
+  system: storefront
+  consumesApis:
+    - storefront-api
+    - auth-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: storefront-api
+  description: BFF API serving product catalog, search, and cart endpoints
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: storefront
+  providesApis:
+    - storefront-api
+  consumesApis:
+    - order-api
+    - inventory-api
+    - auth-api
+  dependsOn:
+    - resource:default/product-cache
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: product-cache
+  description: Redis cache for product catalog responses
+  tags: [c4]
+spec:
+  type: redis
+  owner: guests
+  system: storefront
+---
+# ── Ordering components ───────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: order-service
+  description: Handles order creation, payment, and lifecycle management
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: ordering
+  providesApis:
+    - order-api
+  consumesApis:
+    - payment-api
+    - auth-api
+  dependsOn:
+    - resource:default/orders-db
+    - resource:default/orders-queue
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: notification-worker
+  description: Sends order confirmation and shipping emails via SendGrid
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: ordering
+  consumesApis:
+    - order-api
+  dependsOn:
+    - resource:default/orders-queue
+    - resource:default/notification-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: orders-db
+  description: PostgreSQL database storing orders and line items
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: ordering
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: orders-queue
+  description: Kafka topic for order events consumed by workers
+  tags: [c4]
+spec:
+  type: kafka-queue
+  owner: guests
+  system: ordering
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: notification-db
+  description: PostgreSQL database tracking notification state
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: ordering
+---
+# ── APIs ──────────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: storefront-api
+  description: REST API — products, cart, search
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: storefront
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Storefront API, version: "1.0.0" }
+    paths:
+      /products: { get: { summary: List products } }
+      /cart: { post: { summary: Add to cart } }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: order-api
+  description: REST API — create and query orders
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: ordering
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Order API, version: "1.0.0" }
+    paths:
+      /orders: { post: { summary: Create order } }
+      /orders/{id}: { get: { summary: Get order } }
+---
+# ── Payments Subdomain — system and components ────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: payment-processing
+  description: Handles payment authorization, capture, and refunds
+  tags: [c4]
+spec:
+  owner: guests
+  domain: payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payment-service
+  description: REST service for payment authorization and capture
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: payment-processing
+  providesApis:
+    - payment-api
+  consumesApis:
+    - auth-api
+  dependsOn:
+    - resource:default/payments-db
+---
+# Subcomponents of payment-service (spec.subcomponentOf)
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payment-gateway-client
+  description: Stripe SDK wrapper — handles charge, refund, and webhook calls
+  tags: [c4]
+spec:
+  type: library
+  lifecycle: production
+  owner: guests
+  system: payment-processing
+  subcomponentOf: payment-service
+  consumesApis:
+    - payment-gateway-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: fraud-checker
+  description: Real-time fraud scoring using ML model before authorising payment
+  tags: [c4]
+spec:
+  type: library
+  lifecycle: production
+  owner: guests
+  system: payment-processing
+  subcomponentOf: payment-service
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: payments-db
+  description: PostgreSQL database storing payment transactions
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: payment-processing
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: payment-api
+  description: REST API — payment authorization and capture
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: payment-processing
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Payment API, version: "1.0.0" }
+    paths:
+      /payments: { post: { summary: Authorize payment } }
+      /payments/{id}/capture: { post: { summary: Capture payment } }
+---
+# ── External systems (modelled as Systems in an external domain) ──────────────
+# Stripe and SendGrid live in the "external" domain — they appear as external
+# nodes in the ordering system's context diagram.
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: payment-gateway-api
+  description: Stripe payment processing REST API
+  tags: [c4, external]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: external-services
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Payment Gateway API, version: "1.0.0" }
+    paths:
+      /charge: { post: { summary: Charge card } }

@@ -6,77 +6,13 @@ import {
 } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import { NODE_H, NODE_W } from '../c4Style';
-
-type Rect = { x: number; y: number; w: number; h: number };
-
-/** Closest face-to-face attachment points between two axis-aligned rectangles. */
-function closestFace(src: Rect, tgt: Rect) {
-  const srcCx = src.x + src.w / 2,
-    srcCy = src.y + src.h / 2;
-  const tgtCx = tgt.x + tgt.w / 2,
-    tgtCy = tgt.y + tgt.h / 2;
-  const dx = tgtCx - srcCx,
-    dy = tgtCy - srcCy;
-  const vOverlap =
-    Math.min(src.y + src.h, tgt.y + tgt.h) - Math.max(src.y, tgt.y);
-  const hOverlap =
-    Math.min(src.x + src.w, tgt.x + tgt.w) - Math.max(src.x, tgt.x);
-  let sx: number, sy: number, tx: number, ty: number;
-  if (vOverlap > 0) {
-    const cy =
-      (Math.max(src.y, tgt.y) + Math.min(src.y + src.h, tgt.y + tgt.h)) / 2;
-    if (dx >= 0) {
-      sx = src.x + src.w;
-      sy = cy;
-      tx = tgt.x;
-      ty = cy;
-    } else {
-      sx = src.x;
-      sy = cy;
-      tx = tgt.x + tgt.w;
-      ty = cy;
-    }
-  } else if (hOverlap > 0) {
-    const cx =
-      (Math.max(src.x, tgt.x) + Math.min(src.x + src.w, tgt.x + tgt.w)) / 2;
-    if (dy >= 0) {
-      sx = cx;
-      sy = src.y + src.h;
-      tx = cx;
-      ty = tgt.y;
-    } else {
-      sx = cx;
-      sy = src.y;
-      tx = cx;
-      ty = tgt.y + tgt.h;
-    }
-  } else if (Math.abs(dx) >= Math.abs(dy)) {
-    if (dx >= 0) {
-      sx = src.x + src.w;
-      sy = srcCy;
-      tx = tgt.x;
-      ty = tgtCy;
-    } else {
-      sx = src.x;
-      sy = srcCy;
-      tx = tgt.x + tgt.w;
-      ty = tgtCy;
-    }
-  } else {
-    if (dy >= 0) {
-      sx = srcCx;
-      sy = src.y + src.h;
-      tx = tgtCx;
-      ty = tgt.y;
-    } else {
-      sx = srcCx;
-      sy = src.y;
-      tx = tgtCx;
-      ty = tgt.y + tgt.h;
-    }
-  }
-  return { sx, sy, tx, ty };
-}
+import {
+  faceFromHandle,
+  isHorizontalHandle,
+  orthogonalPath,
+  resolveAbsolutePositions,
+} from '../layout/geometry';
+import { HandleRouter } from '../layout/routing/HandleRouter';
 
 interface ElkSection {
   startPoint: { x: number; y: number };
@@ -146,18 +82,7 @@ export function ElkEdge({
 }: EdgeProps) {
   const nodes = useNodes();
 
-  // Build a map of absolute positions for every node, resolving parentId offsets.
-  // React Flow stores child node positions relative to their parent.
-  const absPos = new Map<string, Point>();
-  nodes.forEach(n => {
-    if (!n.parentId) absPos.set(n.id, n.position);
-  });
-  nodes.forEach(n => {
-    if (n.parentId) {
-      const p = absPos.get(n.parentId) ?? { x: 0, y: 0 };
-      absPos.set(n.id, { x: p.x + n.position.x, y: p.y + n.position.y });
-    }
-  });
+  const absPos = resolveAbsolutePositions(nodes);
 
   /** True if the label rectangle at (mx, rectTop→rectBottom) hits any node box. */
   function overlapsNode(
@@ -202,18 +127,38 @@ export function ElkEdge({
     labelY = mid.y;
     isHorizontal = Math.abs(dx) > Math.abs(dy);
   } else {
-    // No ELK sections (edit mode) — compute face-to-face attachment from live node positions.
+    // No sections (edit mode) — recompute from live node positions using HandleRouter
+    // so center handles are preferred and edges follow nodes as they are dragged.
     const srcPos = absPos.get(source);
     const tgtPos = absPos.get(target);
     if (srcPos && tgtPos) {
-      const { sx, sy, tx, ty } = closestFace(
+      const {
+        sx,
+        sy,
+        tx,
+        ty,
+        sourceHandle: sh,
+        targetHandle: th,
+      } = new HandleRouter().select(
         { x: srcPos.x, y: srcPos.y, w: NODE_W, h: NODE_H },
         { x: tgtPos.x, y: tgtPos.y, w: NODE_W, h: NODE_H },
       );
-      edgePath = `M ${sx} ${sy} L ${tx} ${ty}`;
-      labelX = (sx + tx) / 2;
-      labelY = (sy + ty) / 2;
-      isHorizontal = Math.abs(tx - sx) > Math.abs(ty - sy);
+      const horiz = isHorizontalHandle(sh);
+      const { path, pts } = orthogonalPath(
+        sx,
+        sy,
+        tx,
+        ty,
+        horiz,
+        faceFromHandle(sh),
+        faceFromHandle(th),
+      );
+      edgePath = path;
+      const labelFrac: number = (data as any)?.labelFraction ?? 0.5;
+      const { mid, dx: ldx, dy: ldy } = polylinePoint(pts, labelFrac);
+      labelX = mid.x;
+      labelY = mid.y;
+      isHorizontal = Math.abs(ldx) > Math.abs(ldy);
     } else {
       edgePath = '';
       labelX = 0;
@@ -267,9 +212,10 @@ export function ElkEdge({
               transform: `translate(-50%, ${alignY}) translate(${labelX}px,${translateY}px)`,
               fontSize: 10,
               fontStyle: 'italic',
-              color: '#333',
+              color: 'var(--c4-color-edge-label, #333333)',
               textAlign: 'center',
-              background: 'rgba(255,255,255,0.85)',
+              background:
+                'var(--c4-color-edge-label-bg, rgba(255,255,255,0.85))',
               padding: '1px 5px',
               borderRadius: 3,
               pointerEvents: 'all',

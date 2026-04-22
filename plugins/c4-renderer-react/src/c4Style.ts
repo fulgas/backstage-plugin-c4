@@ -1,67 +1,27 @@
 /**
- * Visual style constants following Structurizr's default C4 diagram theme.
+ * Layout constants for the C4 diagram renderer.
  *
- * Reference: https://structurizr.com/help/styles
- *
- * Structurizr defaults (as of 2024):
- *   - Relationships: solid grey lines (#707070), closed arrowhead, thickness 2
- *   - Person:        dark navy fill  (#08427B), white text
- *   - Internal node: blue fill       (#1168BD), white text  (System / Container / Component)
- *   - External node: grey fill       (#999999), white text  (out-of-scope Systems)
- *   - Database node: dark green fill (#0b6e4f), white text  (subType = 'database')
- *   - Boundary box:  dashed border   (#AAAAAA), transparent fill
+ * Visual colours are CSS custom properties defined in c4Theme.css.
+ * Override any --c4-color-* variable in your app CSS to customise the theme.
  */
-
-// ── Element fill colours ─────────────────────────────────────────────────────
-
-/** Person / actor (user, group, external user). */
-export const COLOR_PERSON = '#08427B';
-
-/** Internal software system, container, or component. */
-export const COLOR_INTERNAL = '#1168BD';
-
-/** External / out-of-scope software system. */
-export const COLOR_EXTERNAL = '#999999';
-
-/** Database container (subType === 'database'). */
-export const COLOR_DATABASE = '#0b6e4f';
-
-/** Queue/message-bus container (subType === 'queue'). */
-export const COLOR_QUEUE = '#1168BD';
-
-// ── Boundary ─────────────────────────────────────────────────────────────────
-
-/** Dashed border colour for the subject boundary box. */
-export const COLOR_BOUNDARY_BORDER = '#AAAAAA';
-
-/** Subtle tinted background inside the boundary. */
-export const COLOR_BOUNDARY_BG = 'rgba(255,255,255,0.55)';
 
 // ── Relationships ─────────────────────────────────────────────────────────────
 
 /**
- * Relationship line colour.
- * Structurizr default: #707070 (medium grey).
+ * Relationship line colour. Used for both the edge stroke and SVG arrowhead marker.
+ * SVG marker `color` attributes don't reliably support CSS custom properties,
+ * so this remains a constant. Override --c4-color-edge in CSS to change the stroke;
+ * this constant controls the marker colour only.
  */
 export const COLOR_RELATIONSHIP = '#707070';
 
-/**
- * Relationship line thickness in pixels.
- * Structurizr default: 2.
- */
+/** Relationship line thickness in pixels. Structurizr default: 2. */
 export const RELATIONSHIP_STROKE_WIDTH = 2;
 
-/**
- * Whether relationships use a dashed stroke.
- * Structurizr default: false (solid).
- * Some teams override this to distinguish async/event relationships.
- */
+/** Whether relationships use a dashed stroke. Structurizr default: false (solid). */
 export const RELATIONSHIP_DASHED = false;
 
-/**
- * Arrowhead size (width × height in px) for the closed arrow marker.
- * Structurizr renders a standard closed/filled arrowhead.
- */
+/** Arrowhead size (width × height in px) for the closed arrow marker. */
 export const RELATIONSHIP_MARKER_SIZE = 16;
 
 // ── Layout ────────────────────────────────────────────────────────────────────

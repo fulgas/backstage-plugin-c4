@@ -23,9 +23,11 @@
     "@backstage/core-plugin-api": "^1.9.0",
     "@backstage/frontend-plugin-api": "*",
     "@backstage/plugin-catalog-react": "*",
+    "@backstage/ui": "^0.14.2",
     "@fulgas/plugin-c4-frontend-common": "^0.1.0",
     "@fulgas/plugin-c4-renderer-react": "^0.1.0",
     "@material-ui/core": "^4.12.4",
+    "@remixicon/react": "^4.9.0",
     "react": "^18.0.0",
     "swr": "^2.0.0"
   },

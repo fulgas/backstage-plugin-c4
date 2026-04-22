@@ -1,12 +1,15 @@
 export type C4Source = string;
 
 /**
- * The three C4 diagram levels, derived from node depth in the tree.
- * This type replaces the old C4ViewType enum.
+ * The four C4 diagram levels, derived from node depth in the tree.
  *
  * @see C4Node.depth
  */
-export type C4DiagramLevel = 'landscape' | 'context' | 'container';
+export type C4DiagramLevel =
+  | 'landscape'
+  | 'context'
+  | 'container'
+  | 'component';
 
 /**
  * A node in the C4 hierarchy.
@@ -15,6 +18,7 @@ export type C4DiagramLevel = 'landscape' | 'context' | 'container';
  * - `depth 0` — Domain: the subject of a **landscape** diagram
  * - `depth 1` — System: the subject of a **context** diagram
  * - `depth 2` — Container: the subject of a **container** diagram
+ * - `depth 3` — Subcomponent: appears inside a **component** diagram (via `spec.subcomponentOf`)
  *
  * `depth` is stored as a denormalized field so it can be queried in O(1)
  * without traversing the full parentId chain.
@@ -24,7 +28,7 @@ export interface C4Node {
   id: string;
   /** ID of the parent node. Undefined means this is a root (depth 0) node. */
   parentId?: string;
-  /** Tree depth: 0 = domain, 1 = system, 2 = container. */
+  /** Tree depth: 0 = domain, 1 = system, 2 = container, 3 = subcomponent. */
   depth: number;
   name: string;
   description: string;
@@ -32,6 +36,8 @@ export interface C4Node {
   technology?: string;
   /** Visual shape hint for depth-2 nodes. */
   subType?: 'service' | 'database' | 'queue' | 'resource';
+  /** Whether clicking this node navigates to its own diagram page. Set by the backend. */
+  navigable?: boolean;
   tags: string[];
   /** The Backstage entity this node was derived from. */
   catalogEntityRef?: string;
@@ -95,7 +101,7 @@ export interface C4Model {
  * so all users loading the same diagram see the same layout choices.
  */
 export interface C4ViewDisplaySettings {
-  /** Layout direction. Defaults to `'auto'` when not set. */
+  /** Layout direction. Defaults to `'TB'` when not set. */
   direction?: 'TB' | 'LR' | 'auto';
   /** ELK node separation in pixels (horizontal gap between nodes). */
   nodeSep?: number;
@@ -120,7 +126,7 @@ export interface C4ViewDescriptor {
   id: string;
   title: string;
   /**
-   * ID of the `C4Node` at the centre of this diagram.
+   * ID of the `C4Node` at the shcentre of this diagram.
    * Its `depth` determines the diagram level.
    */
   subjectId: string;
@@ -136,14 +142,18 @@ export interface C4ViewDescriptor {
   source: C4Source;
   /** Shared display preferences (direction, spacing). Saved by users, shared across all viewers. */
   displaySettings?: C4ViewDisplaySettings;
+  /** Display name of the subject's parent node (e.g. system name for a container diagram). Not stored — derived at read time via join. */
+  parentTitle?: string;
+  /** Catalog entity ref of the subject's parent node. Not stored — derived at read time via join. Used for navigation. */
+  parentEntityRef?: string;
 }
 
 /**
  * A fully computed, render-ready diagram.
  *
  * Never stored in the DB — always derived from the node tree via
- * `ModelStore.computeDiagram()`. Results are cached in-memory and
- * invalidated on every sync.
+ * `ModelStore.computeDiagram()`. Results cached via Backstage CacheService;
+ * invalidated after sync or when positions/settings change.
  *
  * Node roles within the diagram:
  * - **Subject** (`descriptor.subjectId`): the boundary box

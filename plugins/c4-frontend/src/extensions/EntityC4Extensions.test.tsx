@@ -4,13 +4,14 @@ import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { TestApiRegistry, wrapInTestApp } from '@backstage/test-utils';
 import { C4Api, c4ApiRef } from '@fulgas/plugin-c4-frontend-common';
 import { render, screen, waitFor } from '@testing-library/react';
-import React from 'react';
 import { EntityC4CardContent } from './EntityC4CardExtension';
 import { EntityC4TabContent } from './EntityC4TabExtension';
 
 jest.mock('@fulgas/plugin-c4-renderer-react', () => ({
   ReactC4Renderer: class {
-    render() { return <div data-testid="mock-diagram" />; }
+    render() {
+      return <div data-testid="mock-diagram" />;
+    }
   },
 }));
 
@@ -36,6 +37,9 @@ function mockApi(descriptors: any[] = [descriptor]): C4Api {
     getDiagram: jest.fn().mockResolvedValue(undefined),
     getEntityViewDescriptors: jest.fn().mockResolvedValue(descriptors),
     triggerSync: jest.fn().mockResolvedValue({ status: 'started' }),
+    updateViewSettings: jest.fn().mockResolvedValue(undefined),
+    saveNodePositions: jest.fn().mockResolvedValue(undefined),
+    resetNodePositions: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -50,7 +54,9 @@ function wrap(api: C4Api) {
 
 describe('EntityC4TabContent', () => {
   it('renders without crashing', async () => {
-    const { container } = render(<EntityC4TabContent />, { wrapper: wrap(mockApi()) as any });
+    const { container } = render(<EntityC4TabContent />, {
+      wrapper: wrap(mockApi()) as any,
+    });
     await waitFor(() => expect(container.firstChild).toBeTruthy());
   });
 });
@@ -65,6 +71,8 @@ describe('EntityC4CardContent', () => {
 
   it('renders card when descriptors exist', async () => {
     render(<EntityC4CardContent />, { wrapper: wrap(mockApi()) as any });
-    await waitFor(() => expect(screen.getByText(/C4 Architecture/i)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/C4 Architecture/i)).toBeTruthy(),
+    );
   });
 });

@@ -9,6 +9,7 @@ export async function up(knex: Knex): Promise<void> {
     table.text('description').notNullable().defaultTo('');
     table.text('technology').nullable();
     table.text('sub_type').nullable();
+    table.boolean('navigable').notNullable().defaultTo(false);
     table.text('tags').notNullable().defaultTo('[]');
     table.text('catalog_entity_ref').nullable();
     table.text('source').notNullable();

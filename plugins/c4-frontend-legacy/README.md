@@ -28,7 +28,7 @@ const routes = (
 
 ```typescript
 // packages/app/src/components/Root/Root.tsx
-import ExtensionIcon from '@material-ui/icons/Extension';
+import ExtensionIcon from '@mui/icons-material/Extension';
 
 <SidebarItem icon={ExtensionIcon} to="c4" text="C4 Diagrams" />;
 ```

@@ -1,0 +1,206 @@
+# ── Fulfillment Domain ────────────────────────────────────────────────────────
+# Inventory management and shipping. Cross-domain: shipping consumes order-api
+# from retail, creating a visible cross-domain edge in the landscape view.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: fulfillment
+  description: Warehouse inventory management and shipment tracking
+  tags: [c4]
+spec:
+  owner: guests
+---
+# ── Systems ───────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: inventory
+  description: Tracks stock levels, warehouse locations, and replenishment
+  tags: [c4]
+spec:
+  owner: guests
+  domain: fulfillment
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: shipping
+  description: Manages carrier dispatch, tracking, and delivery confirmation
+  tags: [c4]
+spec:
+  owner: guests
+  domain: fulfillment
+---
+# ── Inventory components ──────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: inventory-service
+  description: REST service exposing stock levels and reservation endpoints
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: inventory
+  providesApis:
+    - inventory-api
+  dependsOn:
+    - resource:default/inventory-db
+    - resource:default/stock-events-queue
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: replenishment-worker
+  description: Listens to stock-events and triggers purchase orders when stock is low
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: inventory
+  consumesApis:
+    - inventory-api
+  dependsOn:
+    - resource:default/stock-events-queue
+    - resource:default/inventory-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: inventory-db
+  description: PostgreSQL database storing SKUs, stock counts, and warehouse locations
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: inventory
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: stock-events-queue
+  description: Kafka topic publishing stock-changed and restock events
+  tags: [c4]
+spec:
+  type: kafka-queue
+  owner: guests
+  system: inventory
+---
+# ── Shipping components ───────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: shipping-service
+  description: Dispatches shipments to carriers and exposes tracking endpoints
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: shipping
+  providesApis:
+    - shipping-api
+  consumesApis:
+    - order-api
+    - inventory-api
+    - carrier-api
+  dependsOn:
+    - resource:default/shipments-db
+    - resource:default/dispatch-queue
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tracking-worker
+  description: Polls carrier APIs for status updates and writes tracking events
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: shipping
+  consumesApis:
+    - carrier-api
+  dependsOn:
+    - resource:default/shipments-db
+    - resource:default/dispatch-queue
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: shipments-db
+  description: PostgreSQL database of shipments, parcels, and tracking events
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: shipping
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: dispatch-queue
+  description: Kafka topic for shipment dispatch commands
+  tags: [c4]
+spec:
+  type: kafka-queue
+  owner: guests
+  system: shipping
+---
+# ── APIs ──────────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: inventory-api
+  description: REST API — stock levels, reservations, warehouse locations
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: inventory
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Inventory API, version: "1.0.0" }
+    paths:
+      /stock/{sku}: { get: { summary: Get stock level } }
+      /reserve: { post: { summary: Reserve stock } }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: shipping-api
+  description: REST API — create shipments and query tracking status
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: shipping
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Shipping API, version: "1.0.0" }
+    paths:
+      /shipments: { post: { summary: Create shipment } }
+      /track/{id}: { get: { summary: Track shipment } }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: carrier-api
+  description: Third-party carrier REST API (DHL / FedEx compatible)
+  tags: [c4, external]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: external-services
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Carrier API, version: "1.0.0" }
+    paths:
+      /dispatch: { post: { summary: Dispatch parcel } }
+      /track/{id}: { get: { summary: Track parcel } }

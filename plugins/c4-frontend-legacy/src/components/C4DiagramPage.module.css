@@ -1,0 +1,37 @@
+@layer components {
+  .boundaries {
+    display: flex;
+    gap: var(--bui-space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--bui-space-4);
+  }
+
+  .boundaryChip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--bui-space-2);
+    padding: var(--bui-space-1) var(--bui-space-3);
+    background: none;
+    border: 1px dashed currentColor;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+    font-family: inherit;
+    font-size: var(--bui-font-size-2);
+    color: inherit;
+    transition: opacity 0.15s;
+  }
+
+  .boundaryChip:hover {
+    opacity: 1;
+  }
+
+  .boundaryTitle {
+    font-weight: 500;
+  }
+
+  .boundaryLevel {
+    font-size: 0.85em;
+    opacity: 0.7;
+  }
+}

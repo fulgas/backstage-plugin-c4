@@ -20,6 +20,7 @@
     "@dagrejs/dagre": "^3.0.0",
     "@fulgas/plugin-c4-frontend-common": "^0.1.0",
     "@fulgas/plugin-c4-node": "^0.1.0",
+    "@remixicon/react": "^4.9.0",
     "@xyflow/react": "^12.10.2",
     "elkjs": "^0.11.1",
     "html-to-image": "^1.11.13",

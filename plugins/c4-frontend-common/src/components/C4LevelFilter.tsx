@@ -1,5 +1,4 @@
-import { Tab, Tabs } from '@material-ui/core';
-import React from 'react';
+import { Tab, TabList, Tabs } from '@backstage/ui';
 import { C4DiagramLevel } from '../types';
 
 const LEVELS: { value: C4DiagramLevel; label: string }[] = [
@@ -25,14 +24,16 @@ export function C4LevelFilter({
 }) {
   return (
     <Tabs
-      value={selected}
-      onChange={(_e, val) => onChange(val)}
-      indicatorColor="primary"
-      textColor="primary"
+      selectedKey={selected}
+      onSelectionChange={key => onChange(key as C4DiagramLevel)}
     >
-      {LEVELS.map(l => (
-        <Tab key={l.value} value={l.value} label={l.label} />
-      ))}
+      <TabList>
+        {LEVELS.map(l => (
+          <Tab key={l.value} id={l.value}>
+            {l.label}
+          </Tab>
+        ))}
+      </TabList>
     </Tabs>
   );
 }

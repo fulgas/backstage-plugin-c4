@@ -1,0 +1,33 @@
+/* C4 diagram theme tokens. Override any variable in your app CSS to customise. */
+
+:root,
+[data-theme-mode='light'] {
+  --c4-color-internal: #1168bd;
+  --c4-color-external: #999999;
+  --c4-color-person: #08427b;
+  --c4-color-database: #0b6e4f;
+  --c4-color-queue: #1168bd;
+  --c4-color-node-text: #ffffff;
+
+  --c4-color-boundary-border: #aaaaaa;
+  --c4-color-boundary-bg: rgba(255, 255, 255, 0.55);
+  --c4-color-boundary-label: #555555;
+  --c4-color-boundary-sep: #cccccc;
+  --c4-color-boundary-resizer: #4444aa;
+
+  --c4-color-edge: #707070;
+  --c4-color-edge-label: #333333;
+  --c4-color-edge-label-bg: rgba(255, 255, 255, 0.85);
+
+  --c4-color-active: #1976d2;
+  --c4-color-active-text: #ffffff;
+}
+
+[data-theme-mode='dark'] {
+  --c4-color-boundary-bg: rgba(0, 0, 0, 0.25);
+  --c4-color-boundary-label: #aaaaaa;
+  --c4-color-boundary-sep: #444444;
+
+  --c4-color-edge-label: #dddddd;
+  --c4-color-edge-label-bg: rgba(30, 30, 30, 0.85);
+}

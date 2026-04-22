@@ -38,9 +38,13 @@ catalog:
   rules:
     - allow: [Component, System, Domain, API, Resource, Location]
   locations:
-    # Local example data, file locations are relative to the backend process, typically `packages/backend`
+    # C4 example catalog — three domain files showcasing all C4 levels
     - type: file
-      target: ../../examples/entities.yaml
+      target: ../../examples/c4/retail.yaml
+    - type: file
+      target: ../../examples/c4/fulfillment.yaml
+    - type: file
+      target: ../../examples/c4/platform.yaml
 
     # Local example template
     - type: file

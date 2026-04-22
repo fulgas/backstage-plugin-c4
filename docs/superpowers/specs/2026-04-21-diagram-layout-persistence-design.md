@@ -177,17 +177,20 @@ Sync runs
 
 ## Files Changed
 
-| File                                                    | Change                                                                            |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `c4-node/src/types.ts`                                  | Add `nodePositions` to `C4Diagram`                                                |
-| `c4-backend/src/store/migrations/003_node_positions.ts` | New migration                                                                     |
-| `c4-backend/src/store/ModelStore.ts`                    | `getNodePositions`, `saveNodePositions`, `clearNodePositions`; call clear in sync |
-| `c4-backend/src/router.ts`                              | `PUT /views/:id/positions`, `DELETE /views/:id/positions`                         |
-| `c4-frontend-common/src/api/C4Api.ts`                   | Add `saveNodePositions`, `resetNodePositions`                                     |
-| `c4-frontend-common/src/api/C4ApiClient.ts`             | Implement new API methods                                                         |
-| `c4-frontend-common/src/renderer/RendererInterface.ts`  | Add `editMode`, `onPositionsChange`, `resetKey` to `C4RenderOptions`              |
-| `c4-frontend-common/src/components/C4DiagramViewer.tsx` | Edit mode state, MUI toolbar buttons, wire save/reset/cancel                      |
-| `c4-renderer-react/src/ReactFlowDiagram.tsx`            | Layout selection, edit mode dragging, boundary resize, edge reconnect             |
+| File                                                    | Change                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `c4-node/src/types.ts`                                  | Add `nodePositions` to `C4Diagram`                                                          |
+| `c4-backend/src/store/migrations/003_node_positions.ts` | New migration                                                                               |
+| `c4-backend/src/store/ModelStore.ts`                    | `getNodePositions`, `saveNodePositions`, `clearNodePositions`; call clear in sync           |
+| `c4-backend/src/router.ts`                              | `PUT /views/:id/positions`, `DELETE /views/:id/positions`                                   |
+| `c4-frontend-common/src/api/C4Api.ts`                   | Add `saveNodePositions`, `resetNodePositions`                                               |
+| `c4-frontend-common/src/api/C4ApiClient.ts`             | Implement new API methods                                                                   |
+| `c4-frontend-common/src/renderer/RendererInterface.ts`  | Add `editMode`, `onPositionsChange`, `resetKey`, edit action callbacks to `C4RenderOptions` |
+| `c4-frontend-common/src/components/C4DiagramViewer.tsx` | Edit mode controls in React Flow panel; `handleSettingsChange` persists direction           |
+| `c4-renderer-react/src/layout/geometry.ts`              | Shared `closestFace` geometry — used by both `elkLayout` and `ElkEdge`                      |
+| `c4-renderer-react/src/layout/elkLayout.ts`             | `C4LayoutOptions` (direction TB/LR/auto); direction passed to ELK                           |
+| `c4-renderer-react/src/ReactFlowDiagram.tsx`            | Edit mode, boundary resize (NodeResizer), edge reconnect, direction/download Controls       |
+| `c4-renderer-react/src/edges/ElkEdge.tsx`               | Face-attachment geometry in edit mode (no getSmoothStepPath fallback)                       |
 
 ## Out of Scope
 

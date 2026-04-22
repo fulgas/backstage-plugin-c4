@@ -57,5 +57,9 @@
       "prettier --write"
     ]
   },
-  "packageManager": "yarn@4.4.1"
+  "packageManager": "yarn@4.4.1",
+  "dependencies": {
+    "@backstage/ui": "^0.14.2",
+    "@remixicon/react": "^4.9.0"
+  }
 }

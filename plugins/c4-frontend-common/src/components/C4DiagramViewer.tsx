@@ -1,6 +1,6 @@
 import { ErrorPanel, Progress } from '@backstage/core-components';
 import { useApi } from '@backstage/core-plugin-api';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { mutate } from 'swr';
 import { c4ApiRef } from '../api/C4Api';
 import { C4Renderer, C4RenderOptions } from '../renderer/RendererInterface';

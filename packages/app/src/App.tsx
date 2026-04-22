@@ -30,8 +30,8 @@ import {
 import { ReportIssue } from '@backstage/plugin-techdocs-module-addons-contrib';
 import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
 import { UserSettingsPage } from '@backstage/plugin-user-settings';
+import { C4DiagramPage, C4IndexPage } from '@fulgas/plugin-c4-frontend-legacy';
 import { Navigate, Route } from 'react-router-dom';
-import { C4IndexPage, C4DiagramPage } from '@fulgas/plugin-c4-frontend-legacy';
 import { apis } from './apis';
 import { entityPage } from './components/catalog/EntityPage';
 import { Root } from './components/Root';
@@ -96,7 +96,10 @@ const routes = (
     <Route path="/settings" element={<UserSettingsPage />} />
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/c4" element={<C4IndexPage />} />
-    <Route path="/c4/:namespace/:kind/:name/:viewId" element={<C4DiagramPage />} />
+    <Route
+      path="/c4/:namespace/:kind/:name/:viewId?"
+      element={<C4DiagramPage />}
+    />
   </FlatRoutes>
 );
 

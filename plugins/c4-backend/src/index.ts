@@ -4,9 +4,10 @@ import {
   createExtensionPoint,
 } from '@backstage/backend-plugin-api';
 import { CatalogClient } from '@backstage/catalog-client';
-import { ModelStore } from './store/ModelStore';
+import { c4Permissions } from './permissions';
 import { CatalogProcessor } from './processors/CatalogProcessor';
 import { createRouter } from './router';
+import { ModelStore } from './store/ModelStore';
 import { C4Model, C4ViewDescriptor } from './types';
 
 /**
@@ -68,10 +69,30 @@ export const c4Plugin = createBackendPlugin({
         database: coreServices.database,
         discovery: coreServices.discovery,
         auth: coreServices.auth,
+        cache: coreServices.cache,
+        auditor: coreServices.auditor,
+        permissions: coreServices.permissions,
+        permissionsRegistry: coreServices.permissionsRegistry,
+        httpAuth: coreServices.httpAuth,
         scheduler: coreServices.scheduler,
         config: coreServices.rootConfig,
       },
-      async init({ logger, httpRouter, database, discovery, auth, scheduler, config }) {
+      async init({
+        logger,
+        httpRouter,
+        database,
+        discovery,
+        auth,
+        cache,
+        auditor,
+        permissions,
+        permissionsRegistry,
+        httpAuth,
+        scheduler,
+        config,
+      }) {
+        permissionsRegistry.addPermissions(c4Permissions);
+
         const db = await database.getClient();
         const store = new ModelStore(db);
         await store.migrate();
@@ -81,6 +102,10 @@ export const c4Plugin = createBackendPlugin({
 
         async function runSync() {
           logger.info('C4 sync started');
+          const syncEvent = await auditor.createEvent({
+            eventId: 'sync',
+            severityLevel: 'low',
+          });
 
           try {
             const { model, descriptors } = await catalogProcessor.process();
@@ -102,25 +127,58 @@ export const c4Plugin = createBackendPlugin({
               logger.info(`C4 provider "${provider.id}" sync complete`);
             } catch (err) {
               await store.updateSyncStatus(provider.id, 'error');
-              logger.error(`C4 provider "${provider.id}" sync failed`, err as Error);
+              logger.error(
+                `C4 provider "${provider.id}" sync failed`,
+                err as Error,
+              );
             }
           }
+
+          // Invalidate cached diagrams after sync so next reads are fresh
+          try {
+            const descriptors = await store.getViewDescriptors();
+            await Promise.all(
+              descriptors.map(d => cache.delete(`diagram:${d.id}`)),
+            );
+          } catch {
+            // Non-fatal: stale entries expire via TTL
+          }
+
+          await syncEvent.success({
+            meta: { providers: providers.map(p => p.id) },
+          });
         }
 
-        const router = await createRouter({ store, syncFn: runSync });
+        const router = await createRouter({
+          store,
+          syncFn: runSync,
+          cache,
+          auditor,
+          permissions,
+          httpAuth,
+        });
         // Cast required: two incompatible copies of @types/express exist in the dep
         // tree (@backstage/backend-plugin-api pulls its own via @types/passport).
         // At runtime these are identical — the cast is safe.
         httpRouter.use(router as any);
         httpRouter.addAuthPolicy({ path: '/views', allow: 'unauthenticated' });
-        httpRouter.addAuthPolicy({ path: '/views/:id', allow: 'unauthenticated' });
-        httpRouter.addAuthPolicy({ path: '/entity/:kind/:namespace/:name/views', allow: 'unauthenticated' });
+        httpRouter.addAuthPolicy({
+          path: '/views/:id',
+          allow: 'unauthenticated',
+        });
+        httpRouter.addAuthPolicy({
+          path: '/entity/:kind/:namespace/:name/views',
+          allow: 'unauthenticated',
+        });
         httpRouter.addAuthPolicy({ path: '/health', allow: 'unauthenticated' });
         httpRouter.addAuthPolicy({ path: '/sync', allow: 'unauthenticated' });
 
-        const syncFreqMinutes = config.getOptionalNumber('c4.schedule.frequency.minutes') ?? 15;
-        const syncTimeoutMinutes = config.getOptionalNumber('c4.schedule.timeout.minutes') ?? 5;
-        const syncInitialDelaySeconds = config.getOptionalNumber('c4.schedule.initialDelay.seconds') ?? 15;
+        const syncFreqMinutes =
+          config.getOptionalNumber('c4.schedule.frequency.minutes') ?? 15;
+        const syncTimeoutMinutes =
+          config.getOptionalNumber('c4.schedule.timeout.minutes') ?? 5;
+        const syncInitialDelaySeconds =
+          config.getOptionalNumber('c4.schedule.initialDelay.seconds') ?? 15;
 
         await scheduler.scheduleTask({
           id: 'c4-sync',
@@ -130,7 +188,9 @@ export const c4Plugin = createBackendPlugin({
           fn: runSync,
         });
 
-        logger.info(`C4 backend plugin initialized — syncing every ${syncFreqMinutes} minutes`);
+        logger.info(
+          `C4 backend plugin initialized — syncing every ${syncFreqMinutes} minutes`,
+        );
       },
     });
   },

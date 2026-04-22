@@ -5,10 +5,7 @@ import { C4Diagram, C4ViewDisplaySettings } from '../types';
 export interface C4RenderOptions {
   /** Called when the user clicks a node. Receives the node's `catalogEntityRef` if set, otherwise its `id`. */
   onNodeClick?: (entityRef: string) => void;
-  /**
-   * Called when the user changes display settings (direction, spacing).
-   * The caller is responsible for persisting these settings to the backend.
-   */
+  /** Called when the user changes display settings (direction, spacing). */
   onSettingsChange?: (settings: C4ViewDisplaySettings) => void;
   /**
    * When true, node dragging is enabled and node clicks are suppressed.

@@ -1,23 +1,16 @@
 import { Handle, NodeResizer, Position } from '@xyflow/react';
-import React from 'react';
-import {
-  COLOR_DATABASE,
-  COLOR_EXTERNAL,
-  COLOR_INTERNAL,
-  COLOR_PERSON,
-  COLOR_QUEUE,
-} from '../c4Style';
+import type { CSSProperties } from 'react';
 
 // ── Shared text styles ────────────────────────────────────────────────────────
 
-const LABEL: React.CSSProperties = {
+const LABEL: CSSProperties = {
   fontWeight: 600,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
 };
 
-const DESC: React.CSSProperties = {
+const DESC: CSSProperties = {
   fontSize: 11,
   marginTop: 4,
   opacity: 0.85,
@@ -25,7 +18,7 @@ const DESC: React.CSSProperties = {
   lineHeight: 1.4,
 };
 
-const TECH: React.CSSProperties = {
+const TECH: CSSProperties = {
   fontSize: 10,
   opacity: 0.75,
   marginTop: 2,
@@ -35,88 +28,117 @@ const TECH: React.CSSProperties = {
 
 // ── Handles ───────────────────────────────────────────────────────────────────
 
-const HANDLE_STYLE: React.CSSProperties = { opacity: 0 };
+const HANDLE_STYLE: CSSProperties = { opacity: 0 };
 
-/**
- * Hidden handles on all 4 sides, rendered as siblings of the content element
- * so React Flow positions them relative to the `.react-flow__node` wrapper.
- */
+// Three handles per face at ¼, ½, ¾ — center is preferred by HandleRouter when
+// a face has only one edge; near/far slots absorb additional edges on that face.
 function AllHandles() {
+  const hl = { ...HANDLE_STYLE, left: '25%' };
+  const hc = { ...HANDLE_STYLE, left: '50%' };
+  const hr = { ...HANDLE_STYLE, left: '75%' };
+  const vt = { ...HANDLE_STYLE, top: '25%' };
+  const vc = { ...HANDLE_STYLE, top: '50%' };
+  const vb = { ...HANDLE_STYLE, top: '75%' };
   return (
     <>
+      <Handle id="s-top-l" type="source" position={Position.Top} style={hl} />
+      <Handle id="s-top-c" type="source" position={Position.Top} style={hc} />
+      <Handle id="s-top-r" type="source" position={Position.Top} style={hr} />
       <Handle
-        id="s-top"
-        type="source"
-        position={Position.Top}
-        style={HANDLE_STYLE}
-      />
-      <Handle
-        id="s-right"
+        id="s-right-t"
         type="source"
         position={Position.Right}
-        style={HANDLE_STYLE}
+        style={vt}
       />
       <Handle
-        id="s-bottom"
+        id="s-right-c"
+        type="source"
+        position={Position.Right}
+        style={vc}
+      />
+      <Handle
+        id="s-right-b"
+        type="source"
+        position={Position.Right}
+        style={vb}
+      />
+      <Handle
+        id="s-bottom-l"
         type="source"
         position={Position.Bottom}
-        style={HANDLE_STYLE}
+        style={hl}
       />
       <Handle
-        id="s-left"
+        id="s-bottom-c"
         type="source"
-        position={Position.Left}
-        style={HANDLE_STYLE}
+        position={Position.Bottom}
+        style={hc}
       />
       <Handle
-        id="t-top"
-        type="target"
-        position={Position.Top}
-        style={HANDLE_STYLE}
+        id="s-bottom-r"
+        type="source"
+        position={Position.Bottom}
+        style={hr}
       />
+      <Handle id="s-left-t" type="source" position={Position.Left} style={vt} />
+      <Handle id="s-left-c" type="source" position={Position.Left} style={vc} />
+      <Handle id="s-left-b" type="source" position={Position.Left} style={vb} />
+      <Handle id="t-top-l" type="target" position={Position.Top} style={hl} />
+      <Handle id="t-top-c" type="target" position={Position.Top} style={hc} />
+      <Handle id="t-top-r" type="target" position={Position.Top} style={hr} />
       <Handle
-        id="t-right"
+        id="t-right-t"
         type="target"
         position={Position.Right}
-        style={HANDLE_STYLE}
+        style={vt}
       />
       <Handle
-        id="t-bottom"
+        id="t-right-c"
+        type="target"
+        position={Position.Right}
+        style={vc}
+      />
+      <Handle
+        id="t-right-b"
+        type="target"
+        position={Position.Right}
+        style={vb}
+      />
+      <Handle
+        id="t-bottom-l"
         type="target"
         position={Position.Bottom}
-        style={HANDLE_STYLE}
+        style={hl}
       />
       <Handle
-        id="t-left"
+        id="t-bottom-c"
         type="target"
-        position={Position.Left}
-        style={HANDLE_STYLE}
+        position={Position.Bottom}
+        style={hc}
       />
+      <Handle
+        id="t-bottom-r"
+        type="target"
+        position={Position.Bottom}
+        style={hr}
+      />
+      <Handle id="t-left-t" type="target" position={Position.Left} style={vt} />
+      <Handle id="t-left-c" type="target" position={Position.Left} style={vc} />
+      <Handle id="t-left-b" type="target" position={Position.Left} style={vb} />
     </>
   );
 }
 
 // ── Shape helpers ─────────────────────────────────────────────────────────────
 
-/** Mix a hex colour toward white by `amount` (0–1). */
-function lighten(hex: string, amount = 0.25): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const mix = (c: number) => Math.min(255, Math.round(c + (255 - c) * amount));
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
-}
-
 interface NodeData {
   label: string;
   description?: string;
   technology?: string;
   subType?: string;
+  navigable?: boolean;
 }
 
-/**
- * Standard rounded-rectangle box (service, resource, default).
- */
 function BoxShape({ bg, data }: { bg: string; data: NodeData }) {
   return (
     <div
@@ -127,7 +149,7 @@ function BoxShape({ bg, data }: { bg: string; data: NodeData }) {
         padding: '8px 12px',
         borderRadius: 6,
         background: bg,
-        color: '#fff',
+        color: 'var(--c4-color-node-text, #ffffff)',
         fontFamily: 'sans-serif',
         fontSize: 13,
         textAlign: 'center',
@@ -147,15 +169,12 @@ function BoxShape({ bg, data }: { bg: string; data: NodeData }) {
 /**
  * Cylinder shape for databases (C4 standard).
  *
- * Built with three absolutely-positioned divs inside the fixed node wrapper:
- *   ┌──────────────────┐  ← top ellipse (lighten bg, z=3)
- *   │                  │
- *   │   body + text    │  ← rectangle body (bg, z=1)
- *   │                  │
- *   └──────────────────┘  ← bottom ellipse (bg, z=2)
+ * Uses color-mix() to derive a lighter top ellipse from the base colour,
+ * so the tint adapts automatically when --c4-color-database is overridden.
  */
 function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
-  const EH = 9; // vertical radius of each ellipse cap (px)
+  const EH = 9;
+  const bgLight = `color-mix(in srgb, ${bg} 75%, white)`;
   return (
     <div
       style={{
@@ -165,7 +184,6 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
         overflow: 'hidden',
       }}
     >
-      {/* Rectangle body */}
       <div
         style={{
           position: 'absolute',
@@ -177,7 +195,6 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
           zIndex: 1,
         }}
       />
-      {/* Bottom ellipse — same colour as body so it blends */}
       <div
         style={{
           position: 'absolute',
@@ -191,7 +208,6 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
           zIndex: 2,
         }}
       />
-      {/* Top ellipse — slightly lighter for 3-D depth */}
       <div
         style={{
           position: 'absolute',
@@ -200,12 +216,11 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
           right: 0,
           height: EH * 2,
           borderRadius: '50%',
-          background: lighten(bg),
+          background: bgLight,
           border: '1px solid rgba(255,255,255,0.35)',
           zIndex: 3,
         }}
       />
-      {/* Text — sits above all shapes, padded away from ellipse zones */}
       <div
         style={{
           position: 'absolute',
@@ -220,7 +235,7 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
           alignItems: 'center',
           padding: `${EH + 2}px 12px`,
           boxSizing: 'border-box',
-          color: '#fff',
+          color: 'var(--c4-color-node-text, #ffffff)',
           fontFamily: 'sans-serif',
           fontSize: 13,
           textAlign: 'center',
@@ -234,9 +249,6 @@ function CylinderShape({ bg, data }: { bg: string; data: NodeData }) {
   );
 }
 
-/**
- * Pill / capsule shape for queues and message buses (C4 "pipe" shape).
- */
 function PillShape({ bg, data }: { bg: string; data: NodeData }) {
   return (
     <div
@@ -245,10 +257,9 @@ function PillShape({ bg, data }: { bg: string; data: NodeData }) {
         height: '100%',
         boxSizing: 'border-box',
         padding: '8px 20px',
-        // borderRadius > half of height makes perfectly rounded ends
         borderRadius: 9999,
         background: bg,
-        color: '#fff',
+        color: 'var(--c4-color-node-text, #ffffff)',
         fontFamily: 'sans-serif',
         fontSize: 13,
         textAlign: 'center',
@@ -265,7 +276,6 @@ function PillShape({ bg, data }: { bg: string; data: NodeData }) {
   );
 }
 
-/** Pick the right shape component based on subType. */
 function NodeShape({ bg, data }: { bg: string; data: NodeData }) {
   if (data.subType === 'database') return <CylinderShape bg={bg} data={data} />;
   if (data.subType === 'queue') return <PillShape bg={bg} data={data} />;
@@ -274,7 +284,6 @@ function NodeShape({ bg, data }: { bg: string; data: NodeData }) {
 
 // ── Exported node components ──────────────────────────────────────────────────
 
-/** The subject boundary box — wraps internal nodes visually. */
 export function BoundaryNode({ data }: { data: any }) {
   return (
     <>
@@ -283,7 +292,7 @@ export function BoundaryNode({ data }: { data: any }) {
         minWidth={120}
         minHeight={80}
         lineStyle={{
-          stroke: '#4444aa',
+          stroke: 'var(--c4-color-boundary-resizer, #4444aa)',
           strokeWidth: 1.5,
           strokeDasharray: '4 2',
         }}
@@ -291,20 +300,19 @@ export function BoundaryNode({ data }: { data: any }) {
           width: 10,
           height: 10,
           borderRadius: 2,
-          background: '#4444aa',
+          background: 'var(--c4-color-boundary-resizer, #4444aa)',
           border: 'none',
         }}
       />
-      <AllHandles />
       <div
         style={{
-          border: '2px dashed #aaa',
+          border: '2px dashed var(--c4-color-boundary-border, #aaaaaa)',
           borderRadius: 8,
-          background: 'rgba(255,255,255,0.6)',
+          background: 'var(--c4-color-boundary-bg, rgba(255,255,255,0.6))',
           width: '100%',
           height: '100%',
           boxSizing: 'border-box',
-          cursor: 'default',
+          cursor: data.navigable ? 'pointer' : 'default',
         }}
       >
         <div
@@ -312,11 +320,11 @@ export function BoundaryNode({ data }: { data: any }) {
             padding: '6px 12px 4px',
             fontSize: 11,
             fontWeight: 700,
-            color: '#555',
+            color: 'var(--c4-color-boundary-label, #555555)',
             textTransform: 'uppercase',
             letterSpacing: 1,
             whiteSpace: 'nowrap',
-            borderBottom: '1px dashed #ccc',
+            borderBottom: '1px dashed var(--c4-color-boundary-sep, #cccccc)',
           }}
         >
           {data.label}
@@ -326,33 +334,42 @@ export function BoundaryNode({ data }: { data: any }) {
   );
 }
 
-/** Internal node — a system or container inside the boundary. */
 export function InternalNode({ data }: { data: any }) {
   const bg =
     data.subType === 'database'
-      ? COLOR_DATABASE
+      ? 'var(--c4-color-database, #0b6e4f)'
       : data.subType === 'queue'
-      ? COLOR_QUEUE
-      : COLOR_INTERNAL;
+      ? 'var(--c4-color-queue, #1168bd)'
+      : 'var(--c4-color-internal, #1168bd)';
   return (
-    <>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        cursor: data.navigable ? 'pointer' : 'default',
+      }}
+    >
       <AllHandles />
       <NodeShape bg={bg} data={data} />
-    </>
+    </div>
   );
 }
 
-/** External node — a system or container outside the boundary. */
 export function ExternalNode({ data }: { data: any }) {
   return (
-    <>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        cursor: data.navigable ? 'pointer' : 'default',
+      }}
+    >
       <AllHandles />
-      <NodeShape bg={COLOR_EXTERNAL} data={data} />
-    </>
+      <NodeShape bg="var(--c4-color-external, #999999)" data={data} />
+    </div>
   );
 }
 
-/** Actor node — a person or group. */
 export function ActorNode({ data }: { data: any }) {
   return (
     <>
@@ -364,8 +381,8 @@ export function ActorNode({ data }: { data: any }) {
           boxSizing: 'border-box',
           padding: '6px 12px',
           borderRadius: 24,
-          background: COLOR_PERSON,
-          color: '#fff',
+          background: 'var(--c4-color-person, #08427b)',
+          color: 'var(--c4-color-node-text, #ffffff)',
           fontFamily: 'sans-serif',
           fontSize: 13,
           textAlign: 'center',

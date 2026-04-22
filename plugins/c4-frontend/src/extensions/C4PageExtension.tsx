@@ -1,15 +1,25 @@
-import { Content, EmptyState, Header, Link, Page, Progress, Table, TableColumn } from '@backstage/core-components';
+import {
+  Content,
+  EmptyState,
+  Header,
+  Link,
+  Page,
+  Progress,
+  Table,
+  TableColumn,
+} from '@backstage/core-components';
 import { PageBlueprint } from '@backstage/frontend-plugin-api';
 import { CatalogFilterLayout } from '@backstage/plugin-catalog-react';
+import { Flex, Text } from '@backstage/ui';
 import {
+  C4DiagramViewer,
   C4ViewDescriptor,
   useC4View,
   useC4Views,
 } from '@fulgas/plugin-c4-frontend-common';
 import { ReactC4Renderer } from '@fulgas/plugin-c4-renderer-react';
-import { Box, List, ListItem, ListItemText, Typography } from '@material-ui/core';
-import React, { useMemo, useState } from 'react';
-import { C4DiagramViewer } from '@fulgas/plugin-c4-frontend-common';
+import { useMemo, useState } from 'react';
+import styles from './C4PageExtension.module.css';
 
 const renderer = new ReactC4Renderer();
 
@@ -36,8 +46,11 @@ export function C4PageContent() {
     return ['all', ...Array.from(set).sort()];
   }, [descriptors]);
 
-  const filtered = useMemo(() =>
-    (descriptors ?? []).filter(d => kindFilter === 'all' || kindOf(d.entityRef) === kindFilter),
+  const filtered = useMemo(
+    () =>
+      (descriptors ?? []).filter(
+        d => kindFilter === 'all' || kindOf(d.entityRef) === kindFilter,
+      ),
     [descriptors, kindFilter],
   );
 
@@ -46,10 +59,16 @@ export function C4PageContent() {
       <Page themeId="tool">
         <Header title="C4 Architecture Diagrams" />
         <Content>
-          <Box style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <Flex
+            direction="column"
+            align="center"
+            className={styles.buildingContainer}
+          >
             <Progress />
-            <Typography variant="subtitle1">Diagrams are being built — please refresh when done.</Typography>
-          </Box>
+            <Text variant="body-medium">
+              Diagrams are being built — please refresh when done.
+            </Text>
+          </Flex>
         </Content>
       </Page>
     );
@@ -58,12 +77,28 @@ export function C4PageContent() {
   if (selectedId) {
     return (
       <Page themeId="tool">
-        <Header title="C4 Architecture Diagrams" subtitle={diagram?.descriptor.title} />
+        <Header
+          title="C4 Architecture Diagrams"
+          subtitle={diagram?.descriptor.title}
+        />
         <Content>
-          <Box style={{ marginBottom: 12 }}>
-            <Link to="#" onClick={e => { e.preventDefault(); setSelectedId(undefined); }}>← Back to all views</Link>
-          </Box>
-          <C4DiagramViewer diagram={diagram} renderer={renderer} loading={vmLoading} error={error} />
+          <div className={styles.backLink}>
+            <Link
+              to="#"
+              onClick={e => {
+                e.preventDefault();
+                setSelectedId(undefined);
+              }}
+            >
+              ← Back to all views
+            </Link>
+          </div>
+          <C4DiagramViewer
+            diagram={diagram}
+            renderer={renderer}
+            loading={vmLoading}
+            error={error}
+          />
         </Content>
       </Page>
     );
@@ -75,33 +110,51 @@ export function C4PageContent() {
       <Content>
         <CatalogFilterLayout>
           <CatalogFilterLayout.Filters>
-            <Box style={{ padding: '8px 16px' }}>
+            <div className={styles.filterBox}>
               {kinds.length > 1 && (
                 <>
-                  <Typography variant="subtitle2" style={{ marginBottom: 4 }}>Kind</Typography>
-                  <List dense disablePadding>
-                    {kinds.map(k => (
-                      <ListItem
-                        key={k}
-                        button
-                        selected={kindFilter === k}
-                        onClick={() => { setKindFilter(k); setSelectedId(undefined); }}
-                        style={{ borderRadius: 4 }}
-                      >
-                        <ListItemText primary={k === 'all' ? 'All kinds' : k.charAt(0).toUpperCase() + k.slice(1)} />
-                      </ListItem>
-                    ))}
-                  </List>
+                  <Text variant="body-small" className={styles.filterLabel}>
+                    Kind
+                  </Text>
+                  <ul className={styles.filterList}>
+                    {kinds.map(k => {
+                      const label =
+                        k === 'all'
+                          ? 'All kinds'
+                          : `${k.charAt(0).toUpperCase()}${k.slice(1)}`;
+                      const select = () => {
+                        setKindFilter(k);
+                        setSelectedId(undefined);
+                      };
+                      return (
+                        <li key={k}>
+                          <button
+                            type="button"
+                            className={`${styles.filterItem} ${
+                              kindFilter === k ? styles.filterItemSelected : ''
+                            }`}
+                            onClick={select}
+                          >
+                            {label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </>
               )}
-            </Box>
+            </div>
           </CatalogFilterLayout.Filters>
           <CatalogFilterLayout.Content>
-            {descriptorsLoading ? (
-              <Progress />
-            ) : filtered.length === 0 ? (
-              <EmptyState missing="data" title="No views found" description="No C4 diagrams available for this filter." />
-            ) : (
+            {descriptorsLoading && <Progress />}
+            {!descriptorsLoading && filtered.length === 0 && (
+              <EmptyState
+                missing="data"
+                title="No views found"
+                description="No C4 diagrams available for this filter."
+              />
+            )}
+            {!descriptorsLoading && filtered.length > 0 && (
               <Table<C4ViewDescriptor>
                 title="Diagrams"
                 options={{ paging: true, pageSize: 20, search: true }}

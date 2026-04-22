@@ -1,0 +1,241 @@
+# ── Platform Domain ───────────────────────────────────────────────────────────
+# Shared infrastructure: authentication/authorisation + analytics pipeline.
+# auth-api is consumed by retail and fulfillment → cross-domain edges appear
+# in every landscape diagram.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: platform
+  description: Shared platform services — auth, observability, and analytics
+  tags: [c4]
+spec:
+  owner: guests
+---
+# ── Systems ───────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: auth
+  description: Identity, authentication, and authorisation for all domains
+  tags: [c4]
+spec:
+  owner: guests
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: analytics
+  description: Event ingestion, processing, and reporting pipeline
+  tags: [c4]
+spec:
+  owner: guests
+  domain: platform
+---
+# ── Auth components ───────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: auth-service
+  description: Issues and validates JWT tokens; integrates with SSO provider
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: auth
+  providesApis:
+    - auth-api
+  consumesApis:
+    - sso-api
+  dependsOn:
+    - resource:default/user-db
+    - resource:default/session-cache
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: auth-admin-ui
+  description: Internal web UI for managing users, roles, and permissions
+  tags: [c4]
+spec:
+  type: website
+  lifecycle: production
+  owner: guests
+  system: auth
+  consumesApis:
+    - auth-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: user-db
+  description: PostgreSQL database storing user accounts, roles, and credentials
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: auth
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: session-cache
+  description: Redis cache for active session tokens
+  tags: [c4]
+spec:
+  type: redis
+  owner: guests
+  system: auth
+---
+# ── Analytics components ──────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: event-collector
+  description: Ingests domain events from Kafka and writes to the data warehouse
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: analytics
+  consumesApis:
+    - auth-api
+  dependsOn:
+    - resource:default/events-queue
+    - resource:default/analytics-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: analytics-api
+  description: Query API exposing aggregated metrics and report endpoints
+  tags: [c4]
+spec:
+  type: service
+  lifecycle: production
+  owner: guests
+  system: analytics
+  providesApis:
+    - analytics-query-api
+  consumesApis:
+    - auth-api
+  dependsOn:
+    - resource:default/analytics-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: reporting-ui
+  description: Internal dashboard for business reporting and KPI monitoring
+  tags: [c4]
+spec:
+  type: website
+  lifecycle: production
+  owner: guests
+  system: analytics
+  consumesApis:
+    - analytics-query-api
+    - auth-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: events-queue
+  description: Kafka topic aggregating domain events from retail and fulfillment
+  tags: [c4]
+spec:
+  type: kafka-queue
+  owner: guests
+  system: analytics
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: analytics-db
+  description: ClickHouse columnar database for analytics queries
+  tags: [c4]
+spec:
+  type: database
+  owner: guests
+  system: analytics
+---
+# ── APIs ──────────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: auth-api
+  description: REST API — token issuance, validation, and user profile
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: auth
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Auth API, version: "1.0.0" }
+    paths:
+      /token: { post: { summary: Issue token } }
+      /validate: { post: { summary: Validate token } }
+      /me: { get: { summary: Get current user } }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: analytics-query-api
+  description: REST API — metrics, funnels, and report generation
+  tags: [c4]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: analytics
+  definition: |
+    openapi: "3.0.0"
+    info: { title: Analytics Query API, version: "1.0.0" }
+    paths:
+      /metrics: { get: { summary: Get metrics } }
+      /reports: { post: { summary: Generate report } }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: sso-api
+  description: External SSO provider OIDC API (e.g. Okta / Auth0)
+  tags: [c4, external]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: guests
+  system: external-services
+  definition: |
+    openapi: "3.0.0"
+    info: { title: SSO API, version: "1.0.0" }
+    paths:
+      /authorize: { get: { summary: Authorize } }
+      /token: { post: { summary: Token exchange } }
+---
+# ── External services domain ───────────────────────────────────────────────────
+# Systems in this domain appear as external nodes in context diagrams of any
+# system that consumes their APIs. Not assigned to retail/fulfillment/platform.
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: external-services
+  description: Third-party SaaS APIs consumed by internal systems
+  tags: [c4, external]
+spec:
+  owner: guests
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: external-services
+  description: Stripe, DHL, Okta and other external SaaS dependencies
+  tags: [c4, external]
+spec:
+  owner: guests
+  domain: external-services
