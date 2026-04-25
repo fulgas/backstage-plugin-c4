@@ -2,7 +2,6 @@ import type { C4Actor, C4Node } from '@fulgas/plugin-c4-node';
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { ElkNode } from 'elkjs';
 import {
-  BOUNDARY_PAD,
   COLOR_RELATIONSHIP,
   NODE_H,
   NODE_W,
@@ -11,6 +10,7 @@ import {
 } from '../../c4Style';
 import type { Rect } from '../geometry';
 import { HandleRouter, HandleUsageTracker } from '../routing/HandleRouter';
+import type { ElkSection } from './runElk';
 import type { Boundary, ClassifiedState } from './types';
 
 function depthLabel(depth: number): string {
@@ -27,6 +27,7 @@ interface NodeData {
   subType?: string;
   navigable?: boolean;
   entityRef?: string;
+  [key: string]: unknown;
 }
 
 function nodeData(n: C4Node | C4Actor): NodeData {
@@ -54,6 +55,7 @@ export function buildFlowGraph(
   boundary: Boundary,
   absRects: Map<string, Rect>,
   actors: C4Actor[],
+  elkEdgeSections: Map<string, ElkSection[]> = new Map(),
 ): { flowNodes: Node[]; flowEdges: Edge[] } {
   const {
     subject,
@@ -98,9 +100,10 @@ export function buildFlowGraph(
         id: sdBoundaryId,
         type: 'boundary',
         parentId: boundaryId,
+        // ELK __boundary__ compound padding is already in child.x/y — don't add BOUNDARY_PAD.
         position: {
-          x: BOUNDARY_PAD + (child.x ?? 0),
-          y: BOUNDARY_PAD + (child.y ?? 0),
+          x: child.x ?? 0,
+          y: child.y ?? 0,
         },
         data: {
           label: `${depthLabel(n.depth)}: ${n.name}`,
@@ -132,9 +135,10 @@ export function buildFlowGraph(
         id: n.id,
         type: 'internal',
         parentId: boundaryId,
+        // ELK __boundary__ compound padding is already in child.x/y — don't add BOUNDARY_PAD.
         position: {
-          x: BOUNDARY_PAD + (child.x ?? 0),
-          y: BOUNDARY_PAD + (child.y ?? 0),
+          x: child.x ?? 0,
+          y: child.y ?? 0,
         },
         style: { width: NODE_W, height: NODE_H },
         data: nodeData(n),
@@ -202,12 +206,14 @@ export function buildFlowGraph(
         : 0.35
       : 0.5;
 
-    const { sections, sourceHandle, targetHandle } = router.select(
-      srcRect,
-      tgtRect,
-      usage.ctx(srcId, tgtId),
-    );
+    const {
+      sections: handleSections,
+      sourceHandle,
+      targetHandle,
+    } = router.select(srcRect, tgtRect, usage.ctx(srcId, tgtId));
     usage.mark(srcId, sourceHandle, tgtId, targetHandle);
+    // Prefer ELK-computed sections (obstacle-aware) over HandleRouter heuristic.
+    const sections = elkEdgeSections.get(key) ?? handleSections;
 
     flowEdges.push({
       id: key,

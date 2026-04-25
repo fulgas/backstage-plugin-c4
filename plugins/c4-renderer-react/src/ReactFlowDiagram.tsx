@@ -26,7 +26,7 @@ import {
   type NodeChange,
   type NodeTypes,
 } from '@xyflow/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@xyflow/react/dist/style.css';
 import type { C4RenderOptions } from '@fulgas/plugin-c4-frontend-common';
 import type { C4Diagram } from '@fulgas/plugin-c4-node';
@@ -208,17 +208,26 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
 
   const editMode = options?.editMode ?? false;
 
+  // True when at least one node was dragged in the current edit session.
+  // Drives both displayEdges (memo) and the on-exit recompute decision.
+  const [hasDragged, setHasDragged] = useState(false);
+  // Ref mirrors hasDragged so the editMode useEffect can read it without a stale closure.
+  const hasDraggedRef = useRef(false);
+
   // Seed pendingPositions as soon as edit mode activates so save is always
   // available — user shouldn't have to drag something first.
   useEffect(() => {
-    if (editMode && flow) {
-      const positions: Record<string, { x: number; y: number }> = {};
-      for (const n of flow.nodes) positions[n.id] = n.position;
-      options?.onPositionsChange?.(positions);
+    if (editMode) {
+      setHasDragged(false);
+      hasDraggedRef.current = false;
+      if (flow) {
+        const positions: Record<string, { x: number; y: number }> = {};
+        for (const n of flow.nodes) positions[n.id] = n.position;
+        options?.onPositionsChange?.(positions);
+      }
     }
-    if (!editMode) {
-      // Recompute edge sections from current node positions when exiting edit mode
-      // so viewing mode reflects where nodes ended up after dragging.
+    if (!editMode && hasDraggedRef.current) {
+      // Nodes were moved — recompute edge sections to match new positions.
       setFlow(prev => (prev ? recomputeEdgeSections(prev) : prev));
     }
     // Only re-run when editMode toggles, not on every flow change.
@@ -270,6 +279,8 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
   // After drag ends, reassign handles based on the new node positions so edges
   // always connect to the closest available handle on each face.
   const handleNodeDragStop = useCallback(() => {
+    hasDraggedRef.current = true;
+    setHasDragged(true);
     setFlow(prev => (prev ? recomputeEdgeSections(prev) : prev));
   }, []);
 
@@ -291,10 +302,15 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         ? (flow?.edges ?? []).map(e => ({
             ...e,
             reconnectable: true,
-            data: { ...(e.data as object), sections: undefined },
+            // Clear ELK sections only after a drag so ElkEdge falls back to
+            // HandleRouter (dynamic). Before any drag, keep ELK sections so
+            // edit mode and view mode look identical.
+            data: hasDragged
+              ? { ...(e.data as object), sections: undefined }
+              : e.data,
           }))
         : flow?.edges ?? [],
-    [flow?.edges, editMode],
+    [flow?.edges, editMode, hasDragged],
   );
 
   return (

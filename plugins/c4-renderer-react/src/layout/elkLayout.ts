@@ -4,7 +4,6 @@ import { resolveAbsolutePositions } from './geometry';
 import { buildElkGraph } from './pipeline/buildElkGraph';
 import { buildFlowGraph } from './pipeline/buildFlowGraph';
 import { classify } from './pipeline/classify';
-import { placeExternals } from './pipeline/placeExternals';
 import { runElk } from './pipeline/runElk';
 import { HandleRouter, HandleUsageTracker } from './routing/HandleRouter';
 import type { LayoutResult } from './types';
@@ -51,18 +50,23 @@ export async function elkLayout(
   const dir = options.direction ?? 'TB';
 
   const classified = classify(nodes, actors, relationships, subjectId);
-  const elkGraph = buildElkGraph(classified, dir);
-  const { elkResult, boundary, absRects } = await runElk(
+  const { elkGraph } = buildElkGraph(classified, dir, actors);
+  const { elkResult, boundary, absRects, elkEdgeSections } = await runElk(
     elkGraph,
     classified.subdomainIds,
   );
-  placeExternals(absRects, boundary, classified, actors);
+
+  // Cross-subdomain edge sections are keyed under representative IDs (e.g. 'ordering→payments')
+  // and end at subdomain compound faces. Flow edges use original IDs (e.g. 'ordering→payment-processing')
+  // and need endpoints at individual node faces — handled by HandleRouter fallback in buildFlowGraph.
+  // repKeyMap is retained for future use (e.g. routing hints) but sections are not replicated.
   const { flowNodes, flowEdges } = buildFlowGraph(
     classified,
     elkResult,
     boundary,
     absRects,
     actors,
+    elkEdgeSections,
   );
 
   return { nodes: flowNodes, edges: flowEdges };
