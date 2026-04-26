@@ -360,24 +360,18 @@ export function diagramSuite(
         await enterEditMode(page);
         await shot(page, `${prefix}-05-edit-handles`);
 
-        const handleCount = await page.locator('.react-flow__handle').count();
+        // Dynamic handles use exact ELK port positions (id like 's-right-0.333').
+        // Only check that source and target handles exist — not specific face-center IDs.
+        const srcHandles = await page.locator('[data-handleid^="s-"]').count();
+        const tgtHandles = await page.locator('[data-handleid^="t-"]').count();
         expect(
-          handleCount,
-          'handles should exist in edit mode',
+          srcHandles,
+          'source handles should exist in edit mode',
         ).toBeGreaterThan(0);
-
-        for (const face of ['top', 'right', 'bottom', 'left']) {
-          const srcCenter = page.locator(`[data-handleid="s-${face}-c"]`);
-          const tgtCenter = page.locator(`[data-handleid="t-${face}-c"]`);
-          expect(
-            await srcCenter.count(),
-            `s-${face}-c handles should exist`,
-          ).toBeGreaterThan(0);
-          expect(
-            await tgtCenter.count(),
-            `t-${face}-c handles should exist`,
-          ).toBeGreaterThan(0);
-        }
+        expect(
+          tgtHandles,
+          'target handles should exist in edit mode',
+        ).toBeGreaterThan(0);
       });
     }
 

@@ -13,6 +13,95 @@ import { HandleRouter, HandleUsageTracker } from '../routing/HandleRouter';
 import type { ElkSection } from './runElk';
 import type { Boundary, ClassifiedState } from './types';
 
+// ── Dynamic port handles ──────────────────────────────────────────────────────
+
+/** A handle positioned at the exact ELK port location on a node face. */
+export interface PortHandle {
+  id: string;
+  type: 'source' | 'target';
+  /** Which face the handle sits on. */
+  face: 'top' | 'bottom' | 'left' | 'right';
+  /** 0–1 fraction along the face (0 = left/top edge, 1 = right/bottom edge). */
+  fraction: number;
+}
+
+const PORT_TOL = 18; // px tolerance for face detection
+
+/**
+ * Given an ELK section endpoint and the node's canvas rect, return a PortHandle
+ * describing which face and fraction the port sits on.
+ */
+function elkPointToPortHandle(
+  pt: { x: number; y: number },
+  rect: Rect,
+  type: 'source' | 'target',
+): PortHandle | null {
+  const { x, y, w, h } = rect;
+  const inX = pt.x >= x - PORT_TOL && pt.x <= x + w + PORT_TOL;
+  const inY = pt.y >= y - PORT_TOL && pt.y <= y + h + PORT_TOL;
+  const clamp = (v: number) => Math.max(0.01, Math.min(0.99, v));
+
+  if (Math.abs(pt.y - y) < PORT_TOL && inX) {
+    const frac = clamp((pt.x - x) / w);
+    return {
+      id: `${type[0]}-top-${frac.toFixed(3)}`,
+      type,
+      face: 'top',
+      fraction: frac,
+    };
+  }
+  if (Math.abs(pt.y - (y + h)) < PORT_TOL && inX) {
+    const frac = clamp((pt.x - x) / w);
+    return {
+      id: `${type[0]}-bottom-${frac.toFixed(3)}`,
+      type,
+      face: 'bottom',
+      fraction: frac,
+    };
+  }
+  if (Math.abs(pt.x - x) < PORT_TOL && inY) {
+    const frac = clamp((pt.y - y) / h);
+    return {
+      id: `${type[0]}-left-${frac.toFixed(3)}`,
+      type,
+      face: 'left',
+      fraction: frac,
+    };
+  }
+  if (Math.abs(pt.x - (x + w)) < PORT_TOL && inY) {
+    const frac = clamp((pt.y - y) / h);
+    return {
+      id: `${type[0]}-right-${frac.toFixed(3)}`,
+      type,
+      face: 'right',
+      fraction: frac,
+    };
+  }
+  return null;
+}
+
+/**
+ * Convert a static handle id (e.g. 's-right-c') to a PortHandle using the known
+ * slot fractions (l/t=0.25, c=0.5, r/b=0.75). Used for HandleRouter-selected handles.
+ */
+function staticHandleToPortHandle(
+  handleId: string,
+  type: 'source' | 'target',
+): PortHandle {
+  const parts = handleId.split('-');
+  const face = parts[1] as PortHandle['face'];
+  const slot = parts[2] ?? 'c';
+  const FRAC: Record<string, number> = {
+    l: 0.25,
+    t: 0.25,
+    c: 0.5,
+    r: 0.75,
+    b: 0.75,
+  };
+  const fraction = FRAC[slot] ?? 0.5;
+  return { id: handleId, type, face, fraction };
+}
+
 function depthLabel(depth: number): string {
   if (depth === 0) return 'Domain';
   if (depth === 1) return 'System';
@@ -178,6 +267,13 @@ export function buildFlowGraph(
   const router = new HandleRouter();
   const usage = new HandleUsageTracker();
 
+  // Collect dynamic port handles per node id from ELK section endpoints.
+  const nodePortHandles = new Map<string, PortHandle[]>();
+  function addPortHandle(nodeId: string, handle: PortHandle) {
+    if (!nodePortHandles.has(nodeId)) nodePortHandles.set(nodeId, []);
+    nodePortHandles.get(nodeId)!.push(handle);
+  }
+
   const flowEdges: Edge[] = [];
   for (const [key, group] of edgeMap) {
     const srcId = group[0].sourceId;
@@ -208,12 +304,49 @@ export function buildFlowGraph(
 
     const {
       sections: handleSections,
-      sourceHandle,
-      targetHandle,
+      sourceHandle: routerSourceHandle,
+      targetHandle: routerTargetHandle,
     } = router.select(srcRect, tgtRect, usage.ctx(srcId, tgtId));
-    usage.mark(srcId, sourceHandle, tgtId, targetHandle);
+    usage.mark(srcId, routerSourceHandle, tgtId, routerTargetHandle);
+
     // Prefer ELK-computed sections (obstacle-aware) over HandleRouter heuristic.
-    const sections = elkEdgeSections.get(key) ?? handleSections;
+    const elkSections = elkEdgeSections.get(key);
+    const sections = elkSections ?? handleSections;
+
+    // Derive dynamic port handles: ELK section endpoints are most accurate;
+    // fall back to static handle positions from HandleRouter.
+    let sourceHandle: string = routerSourceHandle;
+    let targetHandle: string = routerTargetHandle;
+    if (elkSections?.[0]) {
+      const srcPort = elkPointToPortHandle(
+        elkSections[0].startPoint,
+        srcRect,
+        'source',
+      );
+      const tgtPort = elkPointToPortHandle(
+        elkSections[0].endPoint,
+        tgtRect,
+        'target',
+      );
+      if (srcPort) {
+        sourceHandle = srcPort.id;
+        addPortHandle(srcId, srcPort);
+      }
+      if (tgtPort) {
+        targetHandle = tgtPort.id;
+        addPortHandle(tgtId, tgtPort);
+      }
+    } else {
+      // HandleRouter edge (e.g. cross-subdomain): add static handle positions.
+      addPortHandle(
+        srcId,
+        staticHandleToPortHandle(routerSourceHandle, 'source'),
+      );
+      addPortHandle(
+        tgtId,
+        staticHandleToPortHandle(routerTargetHandle, 'target'),
+      );
+    }
 
     flowEdges.push({
       id: key,
@@ -239,5 +372,13 @@ export function buildFlowGraph(
     });
   }
 
-  return { flowNodes, flowEdges };
+  // Inject port handles into node data so node components can render them.
+  const flowNodesWithPorts = flowNodes.map(n => {
+    const ports = nodePortHandles.get(n.id);
+    return ports?.length
+      ? { ...n, data: { ...n.data, portHandles: ports } }
+      : n;
+  });
+
+  return { flowNodes: flowNodesWithPorts, flowEdges };
 }

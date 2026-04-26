@@ -340,7 +340,7 @@ export function orthogonalPath(
 
 /** True when the handle exits the node horizontally (right or left face). */
 export function isHorizontalHandle(
-  handle: SourceHandle | TargetHandle,
+  handle: SourceHandle | TargetHandle | string,
 ): boolean {
   const face = handle.split('-')[1];
   return face === 'right' || face === 'left';
@@ -348,7 +348,44 @@ export function isHorizontalHandle(
 
 /** Extract the face from a handle id string (e.g. 's-right-c' → 'right'). */
 export function faceFromHandle(
-  handle: SourceHandle | TargetHandle,
+  handle: SourceHandle | TargetHandle | string,
 ): HandleFace {
   return handle.split('-')[1] as HandleFace;
+}
+
+/**
+ * Convert any handle id (static or dynamic) + node rect to pixel (x, y).
+ *
+ * Static slot names → fractions:  l/t → 0.25  |  c → 0.50  |  r/b → 0.75
+ * Dynamic slot is already a number string: '0.333' → 0.333
+ */
+export function handleIdToPoint(
+  handleId: string,
+  rect: Rect,
+): { x: number; y: number; face: HandleFace } {
+  const parts = handleId.split('-');
+  const face = parts[1] as HandleFace;
+  const slot = parts[2] ?? 'c';
+
+  const STATIC: Record<string, number> = {
+    l: 0.25,
+    t: 0.25,
+    c: 0.5,
+    r: 0.75,
+    b: 0.75,
+  };
+  const frac = STATIC[slot] !== undefined ? STATIC[slot] : parseFloat(slot);
+  const f = Number.isFinite(frac) ? frac : 0.5;
+
+  const { x, y, w, h } = rect;
+  switch (face) {
+    case 'top':
+      return { x: x + w * f, y, face };
+    case 'bottom':
+      return { x: x + w * f, y: y + h, face };
+    case 'left':
+      return { x, y: y + h * f, face };
+    case 'right':
+      return { x: x + w, y: y + h * f, face };
+  }
 }

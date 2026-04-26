@@ -1,5 +1,6 @@
 import { Handle, NodeResizer, Position } from '@xyflow/react';
 import type { CSSProperties } from 'react';
+import type { PortHandle } from '../layout/pipeline/buildFlowGraph';
 
 // ── Shared text styles ────────────────────────────────────────────────────────
 
@@ -30,101 +31,62 @@ const TECH: CSSProperties = {
 
 const HANDLE_STYLE: CSSProperties = { opacity: 0 };
 
-// Three handles per face at ¼, ½, ¾ — center is preferred by HandleRouter when
-// a face has only one edge; near/far slots absorb additional edges on that face.
-function AllHandles() {
-  const hl = { ...HANDLE_STYLE, left: '25%' };
-  const hc = { ...HANDLE_STYLE, left: '50%' };
-  const hr = { ...HANDLE_STYLE, left: '75%' };
-  const vt = { ...HANDLE_STYLE, top: '25%' };
-  const vc = { ...HANDLE_STYLE, top: '50%' };
-  const vb = { ...HANDLE_STYLE, top: '75%' };
+const POSITION_MAP: Record<PortHandle['face'], Position> = {
+  top: Position.Top,
+  bottom: Position.Bottom,
+  left: Position.Left,
+  right: Position.Right,
+};
+
+/**
+ * Renders handles at the exact port positions for the current layout.
+ * Falls back to 8 center handles (one source + one target per face) when the
+ * node has no active connections, so new edges can always be started.
+ */
+function DynamicHandles({ portHandles }: { portHandles?: PortHandle[] }) {
+  if (portHandles?.length) {
+    return (
+      <>
+        {portHandles.map(h => {
+          const isHorizontal = h.face === 'top' || h.face === 'bottom';
+          const style: CSSProperties = {
+            ...HANDLE_STYLE,
+            [isHorizontal ? 'left' : 'top']: `${h.fraction * 100}%`,
+          };
+          return (
+            <Handle
+              key={h.id}
+              id={h.id}
+              type={h.type}
+              position={POSITION_MAP[h.face]}
+              style={style}
+            />
+          );
+        })}
+      </>
+    );
+  }
+  // No active connections — show center handles so the node remains connectable.
   return (
     <>
-      <Handle id="s-top-l" type="source" position={Position.Top} style={hl} />
-      <Handle id="s-top-c" type="source" position={Position.Top} style={hc} />
-      <Handle id="s-top-r" type="source" position={Position.Top} style={hr} />
-      <Handle
-        id="s-right-t"
-        type="source"
-        position={Position.Right}
-        style={vt}
-      />
-      <Handle
-        id="s-right-c"
-        type="source"
-        position={Position.Right}
-        style={vc}
-      />
-      <Handle
-        id="s-right-b"
-        type="source"
-        position={Position.Right}
-        style={vb}
-      />
-      <Handle
-        id="s-bottom-l"
-        type="source"
-        position={Position.Bottom}
-        style={hl}
-      />
-      <Handle
-        id="s-bottom-c"
-        type="source"
-        position={Position.Bottom}
-        style={hc}
-      />
-      <Handle
-        id="s-bottom-r"
-        type="source"
-        position={Position.Bottom}
-        style={hr}
-      />
-      <Handle id="s-left-t" type="source" position={Position.Left} style={vt} />
-      <Handle id="s-left-c" type="source" position={Position.Left} style={vc} />
-      <Handle id="s-left-b" type="source" position={Position.Left} style={vb} />
-      <Handle id="t-top-l" type="target" position={Position.Top} style={hl} />
-      <Handle id="t-top-c" type="target" position={Position.Top} style={hc} />
-      <Handle id="t-top-r" type="target" position={Position.Top} style={hr} />
-      <Handle
-        id="t-right-t"
-        type="target"
-        position={Position.Right}
-        style={vt}
-      />
-      <Handle
-        id="t-right-c"
-        type="target"
-        position={Position.Right}
-        style={vc}
-      />
-      <Handle
-        id="t-right-b"
-        type="target"
-        position={Position.Right}
-        style={vb}
-      />
-      <Handle
-        id="t-bottom-l"
-        type="target"
-        position={Position.Bottom}
-        style={hl}
-      />
-      <Handle
-        id="t-bottom-c"
-        type="target"
-        position={Position.Bottom}
-        style={hc}
-      />
-      <Handle
-        id="t-bottom-r"
-        type="target"
-        position={Position.Bottom}
-        style={hr}
-      />
-      <Handle id="t-left-t" type="target" position={Position.Left} style={vt} />
-      <Handle id="t-left-c" type="target" position={Position.Left} style={vc} />
-      <Handle id="t-left-b" type="target" position={Position.Left} style={vb} />
+      {(['top', 'right', 'bottom', 'left'] as const).map(face => (
+        <>
+          <Handle
+            key={`s-${face}-c`}
+            id={`s-${face}-c`}
+            type="source"
+            position={POSITION_MAP[face]}
+            style={HANDLE_STYLE}
+          />
+          <Handle
+            key={`t-${face}-c`}
+            id={`t-${face}-c`}
+            type="target"
+            position={POSITION_MAP[face]}
+            style={HANDLE_STYLE}
+          />
+        </>
+      ))}
     </>
   );
 }
@@ -349,7 +311,7 @@ export function InternalNode({ data }: { data: any }) {
         cursor: data.navigable ? 'pointer' : 'default',
       }}
     >
-      <AllHandles />
+      <DynamicHandles portHandles={data.portHandles} />
       <NodeShape bg={bg} data={data} />
     </div>
   );
@@ -364,7 +326,7 @@ export function ExternalNode({ data }: { data: any }) {
         cursor: data.navigable ? 'pointer' : 'default',
       }}
     >
-      <AllHandles />
+      <DynamicHandles portHandles={data.portHandles} />
       <NodeShape bg="var(--c4-color-external, #999999)" data={data} />
     </div>
   );
@@ -373,7 +335,7 @@ export function ExternalNode({ data }: { data: any }) {
 export function ActorNode({ data }: { data: any }) {
   return (
     <>
-      <AllHandles />
+      <DynamicHandles portHandles={data.portHandles} />
       <div
         style={{
           width: '100%',

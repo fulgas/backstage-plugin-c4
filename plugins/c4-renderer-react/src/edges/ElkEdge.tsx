@@ -8,6 +8,7 @@ import type { CSSProperties } from 'react';
 import { NODE_H, NODE_W } from '../c4Style';
 import {
   faceFromHandle,
+  handleIdToPoint,
   isHorizontalHandle,
   orthogonalPath,
   resolveAbsolutePositions,
@@ -79,6 +80,8 @@ export function ElkEdge({
   labelStyle,
   source,
   target,
+  sourceHandleId,
+  targetHandleId,
 }: EdgeProps) {
   const nodes = useNodes();
 
@@ -127,22 +130,38 @@ export function ElkEdge({
     labelY = mid.y;
     isHorizontal = Math.abs(dx) > Math.abs(dy);
   } else {
-    // No sections (edit mode) — recompute from live node positions using HandleRouter
-    // so center handles are preferred and edges follow nodes as they are dragged.
+    // No sections — route from live node positions.
+    // If sourceHandle/targetHandle are set (manual reconnect or dynamic ports),
+    // use those exact positions. Otherwise let HandleRouter pick the best pair.
     const srcPos = absPos.get(source);
     const tgtPos = absPos.get(target);
     if (srcPos && tgtPos) {
-      const {
-        sx,
-        sy,
-        tx,
-        ty,
-        sourceHandle: sh,
-        targetHandle: th,
-      } = new HandleRouter().select(
-        { x: srcPos.x, y: srcPos.y, w: NODE_W, h: NODE_H },
-        { x: tgtPos.x, y: tgtPos.y, w: NODE_W, h: NODE_H },
-      );
+      const srcRect = { x: srcPos.x, y: srcPos.y, w: NODE_W, h: NODE_H };
+      const tgtRect = { x: tgtPos.x, y: tgtPos.y, w: NODE_W, h: NODE_H };
+
+      let sx: number, sy: number, tx: number, ty: number;
+      let sh: string, th: string;
+
+      if (sourceHandleId && targetHandleId) {
+        // Respect the stored handle choice (dynamic port or manual reconnect).
+        const srcPt = handleIdToPoint(sourceHandleId, srcRect);
+        const tgtPt = handleIdToPoint(targetHandleId, tgtRect);
+        sx = srcPt.x;
+        sy = srcPt.y;
+        tx = tgtPt.x;
+        ty = tgtPt.y;
+        sh = sourceHandleId;
+        th = targetHandleId;
+      } else {
+        const result = new HandleRouter().select(srcRect, tgtRect);
+        sx = result.sx;
+        sy = result.sy;
+        tx = result.tx;
+        ty = result.ty;
+        sh = result.sourceHandle;
+        th = result.targetHandle;
+      }
+
       const horiz = isHorizontalHandle(sh);
       const { path, pts } = orthogonalPath(
         sx,

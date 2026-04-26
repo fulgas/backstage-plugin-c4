@@ -266,15 +266,25 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     });
   };
 
-  const handleReconnect = (oldEdge: Edge, newConnection: Connection) => {
-    setFlow(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        edges: reconnectEdge(oldEdge, newConnection, prev.edges),
-      };
-    });
-  };
+  const handleReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      hasDraggedRef.current = true;
+      setHasDragged(true);
+      setFlow(prev => {
+        if (!prev) return prev;
+        // Clear stale ELK sections on the reconnected edge so ElkEdge re-routes
+        // from the new handle position instead of the old pre-computed path.
+        const reconnected = reconnectEdge(oldEdge, newConnection, prev.edges);
+        const edges = reconnected.map(e =>
+          e.id === oldEdge.id
+            ? { ...e, data: { ...(e.data as object), sections: undefined } }
+            : e,
+        );
+        return { ...prev, edges };
+      });
+    },
+    [],
+  );
 
   // After drag ends, reassign handles based on the new node positions so edges
   // always connect to the closest available handle on each face.

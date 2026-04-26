@@ -8,8 +8,12 @@ import { runElk } from './pipeline/runElk';
 import { HandleRouter, HandleUsageTracker } from './routing/HandleRouter';
 import type { LayoutResult } from './types';
 
-export type { C4LayoutOptions } from './pipeline/types';
-
+/**
+ * Recompute edge sections and handle IDs from current node positions using
+ * HandleRouter. Called after node drag and on exit from edit mode.
+ * Only edges are updated — portHandles on nodes stay from the last full layout
+ * to avoid handle-registry desync that causes edges to disappear.
+ */
 export function recomputeEdgeSections(layout: LayoutResult): LayoutResult {
   const absPos = resolveAbsolutePositions(layout.nodes);
   const router = new HandleRouter();
@@ -56,10 +60,6 @@ export async function elkLayout(
     classified.subdomainIds,
   );
 
-  // Cross-subdomain edge sections are keyed under representative IDs (e.g. 'ordering→payments')
-  // and end at subdomain compound faces. Flow edges use original IDs (e.g. 'ordering→payment-processing')
-  // and need endpoints at individual node faces — handled by HandleRouter fallback in buildFlowGraph.
-  // repKeyMap is retained for future use (e.g. routing hints) but sections are not replicated.
   const { flowNodes, flowEdges } = buildFlowGraph(
     classified,
     elkResult,
