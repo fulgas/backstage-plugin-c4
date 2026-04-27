@@ -19,7 +19,6 @@ import {
 import {
   CatalogFilterLayout,
   EntityDisplayName,
-  EntityKindPicker,
   EntityListProvider,
   EntityOwnerPicker,
   EntityRefLinks,
@@ -65,10 +64,30 @@ function entityRefFrom(entity: {
 }
 
 type DiagramRow = C4ViewDescriptor & {
-  entityName: string;
-  entityKind: string;
   ownerRelations: any[];
 };
+
+// Registers a hidden multi-kind catalog filter so EntityListProvider queries
+// Domain+System+Component entities without showing a kind picker in the UI.
+// Without this, EntityListProvider starts with no filters and never fetches.
+const c4KindsFilter = {
+  // EntityOwnerPicker reads `filters.kind?.value.toLocaleLowerCase()` to hide
+  // itself when kind is 'user'/'group'. Empty string keeps it visible.
+  value: '',
+  getCatalogFilters: (): Record<string, string | string[]> => ({
+    kind: ['Domain', 'System', 'Component'],
+  }),
+  filterEntity: (entity: { kind: string }): boolean =>
+    ['domain', 'system', 'component'].includes(entity.kind.toLowerCase()),
+};
+
+function C4KindFilterRegistrar() {
+  const { updateFilters } = useEntityList();
+  useEffect(() => {
+    updateFilters({ kind: c4KindsFilter as any });
+  }, [updateFilters]);
+  return null;
+}
 
 const ALL_VALUE = 'all';
 
@@ -130,13 +149,6 @@ function tableColumns(
         ),
     },
     {
-      title: 'Kind',
-      field: 'entityKind',
-      width: '15%',
-      render: row =>
-        row.entityKind.charAt(0).toUpperCase() + row.entityKind.slice(1),
-    },
-    {
       title: 'Type',
       field: 'level',
       width: '20%',
@@ -174,14 +186,8 @@ function C4TableContent({
       const ref = entityRefFrom(entity);
       const descriptor = descriptorMap.get(ref);
       if (!descriptor) return null;
-      const { kind, name } = parseRef(ref);
       const ownerRelations = getEntityRelations(entity as any, 'ownedBy');
-      return {
-        ...descriptor,
-        entityName: name,
-        entityKind: kind,
-        ownerRelations,
-      } as DiagramRow;
+      return { ...descriptor, ownerRelations } as DiagramRow;
     });
     return mapped
       .filter((r): r is DiagramRow => r !== null)
@@ -297,11 +303,9 @@ function C4PageInner() {
           </Button>
         </ContentHeader>
         <EntityListProvider>
+          <C4KindFilterRegistrar />
           <CatalogFilterLayout>
             <CatalogFilterLayout.Filters>
-              <EntityKindPicker
-                allowedKinds={['Domain', 'System', 'Component']}
-              />
               <Select
                 label="Type"
                 items={[

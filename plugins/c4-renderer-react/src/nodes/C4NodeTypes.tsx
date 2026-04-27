@@ -98,6 +98,8 @@ interface NodeData {
   description?: string;
   technology?: string;
   subType?: string;
+  /** C4 level tag shown as [System], [Container: Tech], [Component], etc. */
+  c4Type?: string;
   navigable?: boolean;
 }
 
@@ -122,7 +124,17 @@ function BoxShape({ bg, data }: { bg: string; data: NodeData }) {
       }}
     >
       <div style={LABEL}>{data.label}</div>
-      {data.technology && <div style={TECH}>[{data.technology}]</div>}
+      {(data.c4Type || data.technology) && (
+        <div style={TECH}>
+          [
+          {data.c4Type
+            ? data.technology
+              ? `${data.c4Type}: ${data.technology}`
+              : data.c4Type
+            : data.technology}
+          ]
+        </div>
+      )}
       {data.description && <div style={DESC}>{data.description}</div>}
     </div>
   );
@@ -232,7 +244,17 @@ function PillShape({ bg, data }: { bg: string; data: NodeData }) {
       }}
     >
       <div style={LABEL}>{data.label}</div>
-      {data.technology && <div style={TECH}>[{data.technology}]</div>}
+      {(data.c4Type || data.technology) && (
+        <div style={TECH}>
+          [
+          {data.c4Type
+            ? data.technology
+              ? `${data.c4Type}: ${data.technology}`
+              : data.c4Type
+            : data.technology}
+          ]
+        </div>
+      )}
       {data.description && <div style={DESC}>{data.description}</div>}
     </div>
   );

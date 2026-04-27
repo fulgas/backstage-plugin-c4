@@ -29,29 +29,35 @@ const columns: TableColumn<C4ViewDescriptor>[] = [
   { title: 'Entity', field: 'entityRef', render: row => row.entityRef ?? '—' },
 ];
 
-function kindOf(entityRef: string | undefined): string {
-  if (!entityRef) return 'other';
-  return entityRef.split(':')[0] ?? 'other';
-}
+const LEVEL_LABELS: Record<string, string> = {
+  landscape: 'Landscape',
+  context: 'Context',
+  container: 'Container',
+  component: 'Component',
+};
 
 export function C4PageContent() {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [kindFilter, setKindFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
 
   const { descriptors, loading: descriptorsLoading, building } = useC4Views();
   const { diagram, loading: vmLoading, error } = useC4View(selectedId);
 
-  const kinds = useMemo(() => {
-    const set = new Set((descriptors ?? []).map(d => kindOf(d.entityRef)));
-    return ['all', ...Array.from(set).sort()];
+  const types = useMemo(() => {
+    const set = new Set(
+      (descriptors ?? [])
+        .map(d => d.level ?? 'other')
+        .filter(l => l !== 'other'),
+    );
+    return set.size > 1 ? ['all', ...Array.from(set).sort()] : [];
   }, [descriptors]);
 
   const filtered = useMemo(
     () =>
       (descriptors ?? []).filter(
-        d => kindFilter === 'all' || kindOf(d.entityRef) === kindFilter,
+        d => typeFilter === 'all' || d.level === typeFilter,
       ),
-    [descriptors, kindFilter],
+    [descriptors, typeFilter],
   );
 
   if (building) {
@@ -111,27 +117,24 @@ export function C4PageContent() {
         <CatalogFilterLayout>
           <CatalogFilterLayout.Filters>
             <div className={styles.filterBox}>
-              {kinds.length > 1 && (
+              {types.length > 0 && (
                 <>
                   <Text variant="body-small" className={styles.filterLabel}>
-                    Kind
+                    Type
                   </Text>
                   <ul className={styles.filterList}>
-                    {kinds.map(k => {
-                      const label =
-                        k === 'all'
-                          ? 'All kinds'
-                          : `${k.charAt(0).toUpperCase()}${k.slice(1)}`;
+                    {types.map(t => {
+                      const label = t === 'all' ? 'All' : LEVEL_LABELS[t] ?? t;
                       const select = () => {
-                        setKindFilter(k);
+                        setTypeFilter(t);
                         setSelectedId(undefined);
                       };
                       return (
-                        <li key={k}>
+                        <li key={t}>
                           <button
                             type="button"
                             className={`${styles.filterItem} ${
-                              kindFilter === k ? styles.filterItemSelected : ''
+                              typeFilter === t ? styles.filterItemSelected : ''
                             }`}
                             onClick={select}
                           >

@@ -1,4 +1,4 @@
-import type { C4Actor, C4Node } from '@fulgas/plugin-c4-node';
+import { c4TypeLabel, type C4Actor, type C4Node } from '@fulgas/plugin-c4-node';
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { ElkNode } from 'elkjs';
 import {
@@ -114,6 +114,7 @@ interface NodeData {
   description?: string;
   technology?: string;
   subType?: string;
+  c4Type?: string;
   navigable?: boolean;
   entityRef?: string;
   [key: string]: unknown;
@@ -126,6 +127,7 @@ function nodeData(n: C4Node | C4Actor): NodeData {
       description: n.description,
       technology: (n as C4Node).technology,
       subType: (n as C4Node).subType,
+      c4Type: c4TypeLabel(n as C4Node),
       navigable: (n as C4Node).navigable ?? false,
       entityRef: n.catalogEntityRef ?? n.id,
     };
@@ -133,6 +135,7 @@ function nodeData(n: C4Node | C4Actor): NodeData {
   return {
     label: n.name,
     description: n.description,
+    c4Type: 'Person',
     navigable: false,
     entityRef: n.catalogEntityRef ?? n.id,
   };
@@ -296,10 +299,12 @@ export function buildFlowGraph(
 
     const isCrossBoundary =
       internalIdSet.has(srcId) !== internalIdSet.has(tgtId);
+    // For cross-boundary edges, push label well away from the boundary-crossing
+    // point so it sits clearly on the external portion of the path.
     const labelFraction = isCrossBoundary
       ? internalIdSet.has(srcId)
-        ? 0.65
-        : 0.35
+        ? 0.8
+        : 0.2
       : 0.5;
 
     const {
@@ -331,10 +336,23 @@ export function buildFlowGraph(
       if (srcPort) {
         sourceHandle = srcPort.id;
         addPortHandle(srcId, srcPort);
+      } else {
+        // Section endpoint doesn't match the node face (e.g. stale section after
+        // external-node redistribution). Register the static handle so React Flow
+        // can find it and the edge remains visible.
+        addPortHandle(
+          srcId,
+          staticHandleToPortHandle(routerSourceHandle, 'source'),
+        );
       }
       if (tgtPort) {
         targetHandle = tgtPort.id;
         addPortHandle(tgtId, tgtPort);
+      } else {
+        addPortHandle(
+          tgtId,
+          staticHandleToPortHandle(routerTargetHandle, 'target'),
+        );
       }
     } else {
       // HandleRouter edge (e.g. cross-subdomain): add static handle positions.

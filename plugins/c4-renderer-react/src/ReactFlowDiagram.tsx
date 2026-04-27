@@ -243,13 +243,23 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
 
   const handleNodesChange = (changes: NodeChange[]) => {
     if (!editMode) return;
+    const hasPositionChange = changes.some(
+      c => c.type === 'position' || c.type === 'dimensions',
+    );
+    // Only count active drags (dragging: true) — React Flow also fires position
+    // changes on internal sync events when entering edit mode, which must NOT
+    // trigger hasDragged or the faceConnectEdit test would see moved endpoints.
+    const isUserDrag = changes.some(
+      c => c.type === 'position' && (c as { dragging?: boolean }).dragging,
+    );
+    if (isUserDrag && !hasDraggedRef.current) {
+      hasDraggedRef.current = true;
+      setHasDragged(true);
+    }
     setFlow(prev => {
       if (!prev) return prev;
       const nodes = applyNodeChanges(changes, prev.nodes);
-      const hasChange = changes.some(
-        c => c.type === 'position' || c.type === 'dimensions',
-      );
-      if (hasChange) {
+      if (hasPositionChange) {
         const positions: Record<string, { x: number; y: number }> = {};
         for (const n of nodes) positions[n.id] = n.position;
         options?.onPositionsChange?.(positions);
@@ -286,12 +296,12 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     [],
   );
 
-  // After drag ends, reassign handles based on the new node positions so edges
-  // always connect to the closest available handle on each face.
+  // After drag ends mark hasDragged so displayEdges clears stale ELK sections
+  // and ElkEdge re-routes from the stored handle IDs. recomputeEdgeSections
+  // runs on exit from edit mode to rebuild clean sections for view mode.
   const handleNodeDragStop = useCallback(() => {
     hasDraggedRef.current = true;
     setHasDragged(true);
-    setFlow(prev => (prev ? recomputeEdgeSections(prev) : prev));
   }, []);
 
   const displayNodes = useMemo(

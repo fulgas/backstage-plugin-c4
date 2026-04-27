@@ -6,6 +6,8 @@ const STATE_FILE = path.join(__dirname, '.auth-state.json');
 export default defineConfig({
   testDir: '.',
   testMatch: [
+    // C4 page (listing, filters, navigation)
+    'c4-page.spec.ts',
     // Domain landscape diagrams
     'domain-external-services.spec.ts',
     'fulfillment-landscape.spec.ts',
@@ -41,10 +43,10 @@ export default defineConfig({
   ],
   outputDir: './test-results',
   fullyParallel: false,
-  workers: 2,
-  retries: 1,
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
+  workers: 4,
+  retries: 0,
+  timeout: 30_000,
+  expect: { timeout: 8_000 },
   globalSetup: './global-setup.ts',
   use: {
     baseURL: 'http://localhost:3000',

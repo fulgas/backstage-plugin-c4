@@ -14,7 +14,7 @@ export interface ElkSection {
 // because webpack executes it at module-init time and corrupts React's module
 // context (causes "$RefreshSig$ / useState is not a function" errors).
 let _elk: InstanceType<typeof import('elkjs').default> | null = null;
-async function getElk() {
+export async function getElk() {
   if (!_elk) {
     const mod = await import('elkjs/lib/elk.bundled.js');
     const ELKClass = ((mod as any).default ?? mod) as any;
@@ -31,6 +31,7 @@ export async function runElk(
   boundary: Boundary;
   absRects: Map<string, Rect>;
   elkEdgeSections: Map<string, ElkSection[]>;
+  subdomainRects: Map<string, Rect>;
 }> {
   const elk = await getElk();
   const elkResult = await elk.layout(elkGraph);
@@ -105,11 +106,18 @@ export async function runElk(
   // Internal: relative to __boundary__ which maps to canvas (0,0).
   // External: in root space; canvas = root_x + offsetX.
   const absRects = new Map<string, Rect>();
+  const subdomainRects = new Map<string, Rect>();
 
   for (const child of boundaryChild?.children ?? []) {
     if (subdomainIds.has(child.id)) {
       const sdAbsX = child.x ?? 0;
       const sdAbsY = child.y ?? 0;
+      subdomainRects.set(child.id, {
+        x: sdAbsX,
+        y: sdAbsY,
+        w: child.width ?? NODE_W,
+        h: child.height ?? NODE_H,
+      });
       for (const sys of child.children ?? []) {
         absRects.set(sys.id, {
           x: sdAbsX + (sys.x ?? 0),
@@ -192,5 +200,11 @@ export async function runElk(
     children: boundaryChild?.children ?? [],
   };
 
-  return { elkResult: innerElkResult, boundary, absRects, elkEdgeSections };
+  return {
+    elkResult: innerElkResult,
+    boundary,
+    absRects,
+    elkEdgeSections,
+    subdomainRects,
+  };
 }
