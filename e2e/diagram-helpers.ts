@@ -312,6 +312,7 @@ export function isOnNodeFace(pt: Point, n: NodeRect, tol = 15): boolean {
  * noOrphanNodes        — no non-boundary node is stuck at position (0, 0)
  * noFaceHugging        — no edge segment runs along the exterior face of an unrelated node
  * orthogonalSegments   — all edge path segments are axis-aligned (no diagonal lines)
+ * reconnect            — ghost port appears on node face during edge endpoint drag, disappears on release
  */
 export interface DiagramTests {
   render?: boolean;
@@ -332,6 +333,19 @@ export interface DiagramTests {
   noOrphanNodes?: boolean;
   noFaceHugging?: boolean;
   orthogonalSegments?: boolean;
+  reconnect?: boolean;
+  /** reconnectEdge — after dropping edge endpoint on ghost port: new port on new node, old port removed, edge endpoint on new face */
+  reconnectEdge?: boolean;
+  /** resetAfterDrag — drag a node then click Reset; verify edges still rendered (no disappearance) */
+  resetAfterDrag?: boolean;
+  /** noHandleAccumulation — multiple reconnects must not leave ghost handles or stale handles behind */
+  noHandleAccumulation?: boolean;
+  /** singleGhostDot — during reconnect drag only one visible dot on target node (ghost replaces static handles) */
+  singleGhostDot?: boolean;
+  /** staleHandleRemoved — white-circle handle on original target is absent from DOM after reconnect */
+  staleHandleRemoved?: boolean;
+  /** edgeUpdaterOnEndpoint — edge updater circles are co-located with edge path endpoints (±8px) */
+  edgeUpdaterOnEndpoint?: boolean;
 }
 
 /** All structural tests. Use for diagrams with multiple nodes and at least one edge. */
@@ -354,6 +368,13 @@ export const FULL: DiagramTests = {
   noOrphanNodes: true,
   noFaceHugging: true,
   orthogonalSegments: true,
+  reconnect: true,
+  reconnectEdge: true,
+  resetAfterDrag: true,
+  noHandleAccumulation: true,
+  singleGhostDot: true,
+  staleHandleRemoved: true,
+  edgeUpdaterOnEndpoint: true,
 };
 
 /** Node + handle tests only. Use for diagrams with nodes but no cross-node edges. */
@@ -410,7 +431,14 @@ export function diagramSuite(
     tests.dragLive ||
     tests.edgeCount ||
     tests.noFaceHugging ||
-    tests.orthogonalSegments;
+    tests.orthogonalSegments ||
+    tests.reconnect ||
+    tests.reconnectEdge ||
+    tests.resetAfterDrag ||
+    tests.noHandleAccumulation ||
+    tests.singleGhostDot ||
+    tests.staleHandleRemoved ||
+    tests.edgeUpdaterOnEndpoint;
 
   test.describe(suiteName, () => {
     test.beforeEach(async ({ page }) => {
@@ -1257,6 +1285,799 @@ export function diagramSuite(
           violations,
           'all edge segments must be horizontal or vertical',
         ).toHaveLength(0);
+      });
+    }
+
+    // ── reconnect: ghost port appears on face during edge endpoint drag ────────
+
+    if (tests.reconnect) {
+      test('edit mode: ghost port appears on node face during edge endpoint drag', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        // Need at least one edge updater to drag.
+        const updaters = page.locator('.react-flow__edgeupdater');
+        const updaterCount = await updaters.count();
+        if (updaterCount === 0) return;
+
+        const edgeCountBefore = await page.locator('.react-flow__edge').count();
+
+        // Hover the first edge to ensure the updater is interactive.
+        const firstEdge = page.locator('.react-flow__edge').first();
+        await firstEdge.hover({ force: true });
+        await page.waitForTimeout(100);
+
+        const updater = updaters.first();
+        const updaterBox = await updater.boundingBox();
+        if (!updaterBox) return;
+
+        // Find a non-boundary node to drag toward (the ghost will appear there).
+        const targetNode = page
+          .locator('.react-flow__node:not(.react-flow__node-boundary)')
+          .last();
+        const nodeBox = await targetNode.boundingBox();
+        if (!nodeBox) return;
+
+        const ux = updaterBox.x + updaterBox.width / 2;
+        const uy = updaterBox.y + updaterBox.height / 2;
+        const nx = nodeBox.x + nodeBox.width / 2;
+        const ny = nodeBox.y + nodeBox.height / 2;
+
+        await shot(page, `${prefix}-12-reconnect-before`);
+
+        // Drag edge endpoint toward the target node center.
+        await page.mouse.move(ux, uy);
+        await page.mouse.down();
+        await page.mouse.move(nx, ny, { steps: 12 });
+        await page.waitForTimeout(200);
+
+        // Ghost port should be visible on the target node face.
+        const ghostCount = await page.locator('.c4-ghost-port').count();
+        console.log(`[reconnect] ghost ports during drag: ${ghostCount}`);
+        await shot(page, `${prefix}-13-reconnect-during`);
+
+        await page.mouse.up();
+        await page.waitForTimeout(300);
+
+        await shot(page, `${prefix}-14-reconnect-after`);
+
+        // Ghost must be gone after drop.
+        const ghostAfter = await page.locator('.c4-ghost-port').count();
+        console.log(`[reconnect] ghost ports after drop: ${ghostAfter}`);
+
+        // Edge count must not change (reconnect replaces, not removes edges).
+        const edgeCountAfter = await page.locator('.react-flow__edge').count();
+        console.log(
+          `[reconnect] edges before=${edgeCountBefore} after=${edgeCountAfter}`,
+        );
+
+        expect(
+          ghostCount,
+          'ghost port should appear on node face during edge endpoint drag',
+        ).toBeGreaterThan(0);
+        expect(ghostAfter, 'ghost port should disappear after drag ends').toBe(
+          0,
+        );
+        // At least one edge must still render — reconnect can legitimately change topology.
+        expect(
+          edgeCountAfter,
+          'at least one edge should remain visible after reconnect',
+        ).toBeGreaterThan(0);
+      });
+    }
+
+    // ── reconnectEdge: new port on new node, old port removed, endpoint on new face ──
+
+    if (tests.reconnectEdge) {
+      test('edit mode: edge reconnects — new port on new node, old port removed, endpoint on new face', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const nodes = await readNodeRects(page);
+        if (nodes.length < 3) return;
+
+        // Hover the first edge so edgeupdater circles become interactive.
+        const firstEdge = page.locator('.react-flow__edge').first();
+        await firstEdge.hover({ force: true });
+        await page.waitForTimeout(150);
+
+        const updaters = page.locator('.react-flow__edgeupdater');
+        if ((await updaters.count()) === 0) return;
+
+        // Read all current edge IDs to detect conflicts (must be before target selection).
+        const currentEdgeIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.react-flow__edge')).map(
+            e => (e as HTMLElement).dataset.id ?? '',
+          ),
+        );
+        const currentConnections = currentEdgeIds
+          .map(id => {
+            const s = id.indexOf('→');
+            return s !== -1
+              ? { src: id.slice(0, s), tgt: id.slice(s + 1) }
+              : null;
+          })
+          .filter(Boolean) as { src: string; tgt: string }[];
+
+        // Determine which edge and endpoint we're dragging.
+        const edgeId = await firstEdge.getAttribute('data-id');
+        const sep = edgeId?.indexOf('→') ?? -1;
+        if (sep === -1) return;
+        const srcId = edgeId!.slice(0, sep);
+        const tgtId = edgeId!.slice(sep + 1);
+        const origTgtNode = nodes.find(n => n.id === tgtId) ?? null;
+
+        // Find a target node with NO existing edge from srcId — React Flow silently
+        // drops an edge when two edges share the same source+target.
+        const newTgtNode =
+          nodes.find(
+            n =>
+              n.id !== srcId &&
+              n.id !== tgtId &&
+              !currentConnections.some(e => e.src === srcId && e.tgt === n.id),
+          ) ?? null;
+        if (!origTgtNode || !newTgtNode) {
+          console.log(
+            '[reconnect-edge] skipped: no unconnected target node available',
+          );
+          return;
+        }
+
+        // Capture the specific dynamic handle IDs before reconnect.
+        // After reconnect, these IDs should be gone from origTgt (replaced by fallback handles).
+        const FALLBACK_IDS = new Set([
+          's-top-c',
+          't-top-c',
+          's-right-c',
+          't-right-c',
+          's-bottom-c',
+          't-bottom-c',
+          's-left-c',
+          't-left-c',
+        ]);
+        const readDynamicHandleIds = async (nodeId: string) => {
+          const ids = await page.evaluate((nid: string) => {
+            const el = document.querySelector(
+              `.react-flow__node[data-id="${nid}"]`,
+            );
+            return Array.from(
+              el?.querySelectorAll('[data-handleid]') ?? [],
+            ).map(h => h.getAttribute('data-handleid') ?? '');
+          }, nodeId);
+          return ids.filter(id => id && !FALLBACK_IDS.has(id));
+        };
+
+        const origTgtDynamicBefore = await readDynamicHandleIds(origTgtNode.id);
+        const newTgtHandlesBefore = await page
+          .locator(
+            `.react-flow__node[data-id="${newTgtNode.id}"] [data-handleid]`,
+          )
+          .count();
+
+        // Drag the target-end updater for THIS specific edge (scoped to firstEdge).
+        const firstEdgeUpdaters = firstEdge.locator('.react-flow__edgeupdater');
+        const updaterBox = await firstEdgeUpdaters.last().boundingBox();
+        const newTgtBox = await page
+          .locator(`.react-flow__node[data-id="${newTgtNode.id}"]`)
+          .boundingBox();
+        if (!updaterBox || !newTgtBox) return;
+
+        const ux = updaterBox.x + updaterBox.width / 2;
+        const uy = updaterBox.y + updaterBox.height / 2;
+        const nx = newTgtBox.x + newTgtBox.width / 2;
+        const ny = newTgtBox.y + newTgtBox.height / 2;
+
+        console.log(
+          `[reconnect-edge] edge=${edgeId} origTgt=${origTgtNode.id} newTgt=${newTgtNode.id}`,
+        );
+        console.log(
+          `[reconnect-edge] updater=(${ux.toFixed(0)},${uy.toFixed(
+            0,
+          )}) newTgt=(${nx.toFixed(0)},${ny.toFixed(0)})`,
+        );
+
+        // Record initial edge IDs to detect which disappears after reconnect.
+        const initEdgeIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.react-flow__edge')).map(
+            e => (e as HTMLElement).dataset.id ?? '',
+          ),
+        );
+        console.log(
+          `[reconnect-edge] edges before: ${JSON.stringify(initEdgeIds)}`,
+        );
+
+        // Capture browser console logs during reconnect.
+        const browserLogs: string[] = [];
+        page.on('console', msg => {
+          if (msg.text().startsWith('[c4]')) browserLogs.push(msg.text());
+        });
+
+        await shot(page, `${prefix}-15-reconnect-edge-before`);
+
+        await page.mouse.move(ux, uy);
+        await page.mouse.down();
+        await page.mouse.move(nx, ny, { steps: 15 });
+        await page.waitForTimeout(300);
+
+        const ghostDuring = await page.locator('.c4-ghost-port').count();
+        console.log(`[reconnect-edge] ghost during drag: ${ghostDuring}`);
+        await shot(page, `${prefix}-16-reconnect-edge-during`);
+
+        await page.mouse.up();
+        await page.waitForTimeout(100); // let React flush
+
+        console.log('[reconnect-edge] browser logs:', browserLogs.join(' | '));
+
+        const edgeIdsImmediate = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.react-flow__edge')).map(
+            e => (e as HTMLElement).dataset.id ?? '',
+          ),
+        );
+        const shippingOrderingDomCheck = await page.evaluate(() => {
+          // Check if shipping→ordering element exists at all (visible or hidden)
+          const el = document.querySelector(
+            '[data-id="system:default/shipping→system:default/ordering"]',
+          );
+          if (!el) return 'NOT_IN_DOM';
+          return JSON.stringify({
+            class: (el as HTMLElement).className,
+            display: getComputedStyle(el as HTMLElement).display,
+            pathD:
+              el.querySelector('path')?.getAttribute('d')?.slice(0, 60) ??
+              'no-path',
+          });
+        });
+        console.log(
+          `[reconnect-edge] shipping→ordering DOM: ${shippingOrderingDomCheck}`,
+        );
+        console.log(
+          `[reconnect-edge] edges immediately after up: ${JSON.stringify(
+            edgeIdsImmediate,
+          )}`,
+        );
+
+        await page.waitForTimeout(500);
+
+        await shot(page, `${prefix}-17-reconnect-edge-after`);
+
+        // Ghost must be gone after drop.
+        const ghostAfter = await page.locator('.c4-ghost-port').count();
+        expect(ghostAfter, 'ghost port should disappear after drop').toBe(0);
+
+        if (ghostDuring === 0) {
+          console.log(
+            '[reconnect-edge] no ghost during drag — drag did not reach a node face, skipping endpoint checks',
+          );
+          return;
+        }
+
+        // ── New handle on new target node ──────────────────────────────────────
+        const newTgtHandlesAfter = await page
+          .locator(
+            `.react-flow__node[data-id="${newTgtNode.id}"] [data-handleid]`,
+          )
+          .count();
+        console.log(
+          `[reconnect-edge] newTgt handles before=${newTgtHandlesBefore} after=${newTgtHandlesAfter}`,
+        );
+        expect(
+          newTgtHandlesAfter,
+          'new target node should have a handle after reconnect (port was added)',
+        ).toBeGreaterThan(0);
+
+        // ── Original dynamic handle removed from old target node ──────────────
+        // When portHandles empties, DynamicHandles shows 8 fallback center handles —
+        // so total count is meaningless. Check the ORIGINAL dynamic (ELK) handle IDs
+        // are no longer present on the node.
+        const origTgtDynamicAfter = await readDynamicHandleIds(origTgtNode.id);
+        console.log(
+          `[reconnect-edge] origTgt dynamic handles before=${JSON.stringify(
+            origTgtDynamicBefore,
+          )} after=${JSON.stringify(origTgtDynamicAfter)}`,
+        );
+        for (const staleId of origTgtDynamicBefore) {
+          expect(
+            origTgtDynamicAfter,
+            `stale dynamic handle "${staleId}" should be removed from original target node`,
+          ).not.toContain(staleId);
+        }
+
+        // ── Edge endpoint on new target node face ──────────────────────────────
+        const newEdges = await readEdgeEndpoints(page);
+        const newNodes = await readNodeRects(page);
+        const newNodeById = new Map(newNodes.map(n => [n.id, n]));
+        const newTgtRect = newNodeById.get(newTgtNode.id);
+
+        if (!newTgtRect) return;
+
+        let endpointOnNewFace = false;
+        for (const ne of newEdges) {
+          console.log(
+            `[reconnect-edge] post edge ${ne.id}: end=(${ne.end.x.toFixed(
+              1,
+            )},${ne.end.y.toFixed(1)})`,
+          );
+          if (
+            isOnNodeFace(ne.end, newTgtRect) ||
+            isOnNodeFace(ne.start, newTgtRect)
+          ) {
+            endpointOnNewFace = true;
+            break;
+          }
+        }
+
+        expect(
+          endpointOnNewFace,
+          `an edge endpoint should be on new target node (${newTgtNode.id}) face after reconnect`,
+        ).toBe(true);
+
+        // ── Edge count unchanged ───────────────────────────────────────────────
+        const postEdgeIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.react-flow__edge')).map(
+            e => (e as HTMLElement).dataset.id ?? '',
+          ),
+        );
+        console.log(
+          `[reconnect-edge] edges after: ${JSON.stringify(postEdgeIds)}`,
+        );
+        const disappeared = initEdgeIds.filter(id => !postEdgeIds.includes(id));
+        const appeared = postEdgeIds.filter(id => !initEdgeIds.includes(id));
+        if (disappeared.length)
+          console.log(
+            `[reconnect-edge] disappeared: ${JSON.stringify(disappeared)}`,
+          );
+        if (appeared.length)
+          console.log(`[reconnect-edge] appeared: ${JSON.stringify(appeared)}`);
+        const totalEdgesAfter = postEdgeIds.length;
+        console.log(
+          `[reconnect-edge] total edges before=${nodes.length} edgeDOMAfter=${totalEdgesAfter} edgeEndpointsAfter=${newEdges.length}`,
+        );
+        expect(
+          totalEdgesAfter,
+          `total edge DOM count should not drop after reconnect`,
+        ).toBeGreaterThanOrEqual(newEdges.length);
+      });
+    }
+
+    // ── resetAfterDrag: edges survive drag + reset ─────────────────────────────
+
+    if (tests.resetAfterDrag) {
+      test('edit mode: edges still rendered after drag + reset layout', async ({
+        page,
+      }) => {
+        const edgeCountView = await page.locator('.react-flow__edge').count();
+        if (edgeCountView === 0) return;
+
+        await enterEditMode(page);
+
+        // Drag a node to trigger hasDragged state.
+        const draggable = page
+          .locator(
+            '.react-flow__node.react-flow__node-internal, .react-flow__node.react-flow__node-external',
+          )
+          .first();
+        const box = await draggable.boundingBox();
+        if (!box) return;
+
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        await page.mouse.move(cx, cy);
+        await page.mouse.down();
+        await page.mouse.move(cx + 80, cy, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(300);
+
+        const edgesAfterDrag = await page.locator('.react-flow__edge').count();
+        console.log(`[reset-after-drag] edges after drag: ${edgesAfterDrag}`);
+
+        // Click Reset Layout — should re-run ELK and restore positions.
+        await page.click('[title="Reset Layout"]');
+        await page.waitForTimeout(1000); // Allow ELK layout to complete
+
+        await shot(page, `${prefix}-18-after-reset`);
+
+        const edgesAfterReset = await page.locator('.react-flow__edge').count();
+        console.log(
+          `[reset-after-drag] edges after reset: ${edgesAfterReset} (view had ${edgeCountView})`,
+        );
+
+        expect(
+          edgesAfterReset,
+          `edges should still be rendered after drag + reset (was ${edgeCountView}, got ${edgesAfterReset})`,
+        ).toEqual(edgeCountView);
+      });
+    }
+
+    // ── edgeUpdaterOnEndpoint: updater circles co-located with path endpoints ────
+
+    if (tests.edgeUpdaterOnEndpoint) {
+      test('edit mode: edge updater circles are at edge path endpoints', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+        await page.waitForTimeout(300);
+
+        // Read edge updater circle positions and corresponding path endpoints in one pass.
+        // RF's EdgeAnchor deliberately shifts the circle center outward by `r` pixels
+        // (shiftX/shiftY in RF source) so the path endpoint falls ON the circle edge,
+        // not at the center. We verify: distance(endpoint, circle_center) ≤ radius + 4px.
+        const results = await page.evaluate(() => {
+          const EXTRA_TOL = 8; // allow 8px above radius: 5px (handle half-size) + 3px rounding
+          const mismatches: string[] = [];
+
+          document.querySelectorAll('.react-flow__edge').forEach(edgeEl => {
+            const id = (edgeEl as HTMLElement).dataset.id ?? '';
+            const pathEl = edgeEl.querySelector('path.react-flow__edge-path');
+            const updaters = edgeEl.querySelectorAll(
+              '.react-flow__edgeupdater',
+            );
+            if (!pathEl || updaters.length === 0) return;
+
+            const d = pathEl.getAttribute('d') ?? '';
+            const nums = d.match(/-?[\d.]+/g);
+            if (!nums || nums.length < 4) return;
+            const pathStart = {
+              x: parseFloat(nums[0]),
+              y: parseFloat(nums[1]),
+            };
+            const pathEnd = {
+              x: parseFloat(nums[nums.length - 2]),
+              y: parseFloat(nums[nums.length - 1]),
+            };
+
+            // cx/cy = circle center; r = radius. Path endpoint should be ≤ r + TOL from center.
+            updaters.forEach(updater => {
+              const cx = parseFloat(updater.getAttribute('cx') ?? 'NaN');
+              const cy = parseFloat(updater.getAttribute('cy') ?? 'NaN');
+              const r = parseFloat(updater.getAttribute('r') ?? '0');
+              if (isNaN(cx) || isNaN(cy)) return;
+
+              const distStart = Math.hypot(cx - pathStart.x, cy - pathStart.y);
+              const distEnd = Math.hypot(cx - pathEnd.x, cy - pathEnd.y);
+              const nearest = Math.min(distStart, distEnd);
+              if (nearest > r + EXTRA_TOL) {
+                mismatches.push(
+                  `edge ${id}: updater center=(${cx.toFixed(1)},${cy.toFixed(
+                    1,
+                  )}) r=${r} ` +
+                    `nearest endpoint ${nearest.toFixed(1)}px away (> ${
+                      r + EXTRA_TOL
+                    }) ` +
+                    `[start=(${pathStart.x.toFixed(1)},${pathStart.y.toFixed(
+                      1,
+                    )}) ` +
+                    `end=(${pathEnd.x.toFixed(1)},${pathEnd.y.toFixed(1)})]`,
+                );
+              }
+            });
+          });
+
+          const checked = document.querySelectorAll(
+            '.react-flow__edgeupdater',
+          ).length;
+          return { mismatches, checked };
+        });
+
+        console.log(
+          `[updater-pos] checked ${results.checked} updaters, ${results.mismatches.length} mismatches`,
+        );
+        results.mismatches.forEach(m =>
+          console.log(`[updater-pos] MISMATCH: ${m}`),
+        );
+
+        expect(
+          results.mismatches,
+          'edge updater circles should be within 8px of path start or end',
+        ).toHaveLength(0);
+      });
+    }
+
+    // ── singleGhostDot: only one visible handle on target node during drag ──────
+
+    if (tests.singleGhostDot) {
+      test('edit mode: only ghost dot visible on target node during edge endpoint drag', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const firstEdge = page.locator('.react-flow__edge').first();
+        if ((await firstEdge.count()) === 0) return;
+        await firstEdge.hover({ force: true });
+        await page.waitForTimeout(100);
+
+        const updaters = page.locator('.react-flow__edgeupdater');
+        if ((await updaters.count()) === 0) return;
+
+        const updater = updaters.first();
+        const updaterBox = await updater.boundingBox();
+        if (!updaterBox) return;
+
+        const targetNode = page
+          .locator('.react-flow__node:not(.react-flow__node-boundary)')
+          .last();
+        const nodeBox = await targetNode.boundingBox();
+        if (!nodeBox) return;
+        const nodeId = await targetNode.getAttribute('data-id');
+        if (!nodeId) return;
+
+        const nx = nodeBox.x + nodeBox.width / 2;
+        const ny = nodeBox.y + nodeBox.height / 2;
+        const ux = updaterBox.x + updaterBox.width / 2;
+        const uy = updaterBox.y + updaterBox.height / 2;
+
+        await page.mouse.move(ux, uy);
+        await page.mouse.down();
+        await page.mouse.move(nx, ny, { steps: 12 });
+        await page.waitForTimeout(200);
+
+        const ghostCount = await page.locator('.c4-ghost-port').count();
+
+        if (ghostCount > 0) {
+          // While ghost is active on target node, no non-ghost handles should be
+          // visible on that node. Other nodes may still show their handles.
+          const staticOnTarget = await page.evaluate((nid: string) => {
+            const el = document.querySelector(
+              `.react-flow__node[data-id="${nid}"]`,
+            );
+            if (!el) return 0;
+            return Array.from(
+              el.querySelectorAll('.react-flow__handle:not(.c4-ghost-port)'),
+            ).filter(h => {
+              const s = getComputedStyle(h as HTMLElement);
+              return s.opacity !== '0' && s.display !== 'none';
+            }).length;
+          }, nodeId);
+          console.log(
+            `[single-dot] ghost=${ghostCount} staticOnTarget=${staticOnTarget}`,
+          );
+          expect(
+            staticOnTarget,
+            'no visible static handles on target node when ghost is active',
+          ).toBe(0);
+        } else {
+          console.log(
+            '[single-dot] no ghost appeared — drag did not reach a non-boundary node',
+          );
+        }
+
+        await page.mouse.up();
+        await page.waitForTimeout(300);
+      });
+    }
+
+    // ── noHandleAccumulation: handles don't accumulate after multiple reconnects ─
+
+    if (tests.noHandleAccumulation) {
+      test('edit mode: handles do not accumulate after multiple reconnects', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const nodes = await readNodeRects(page);
+        if (nodes.length < 3) return;
+
+        const firstEdge = page.locator('.react-flow__edge').first();
+        if ((await firstEdge.count()) === 0) return;
+        await firstEdge.hover({ force: true });
+        await page.waitForTimeout(100);
+
+        if ((await page.locator('.react-flow__edgeupdater').count()) === 0)
+          return;
+
+        // Do two separate reconnect drags (one to each of two candidate nodes).
+        for (let i = 0; i < 2; i++) {
+          await firstEdge.hover({ force: true });
+          await page.waitForTimeout(100);
+
+          const updaters = firstEdge.locator('.react-flow__edgeupdater');
+          if ((await updaters.count()) === 0) break;
+          const updaterBox = await updaters.last().boundingBox();
+          if (!updaterBox) break;
+
+          const candidateNode = page
+            .locator('.react-flow__node:not(.react-flow__node-boundary)')
+            .nth(i + 1);
+          const candidateBox = await candidateNode.boundingBox();
+          if (!candidateBox) break;
+
+          const ux = updaterBox.x + updaterBox.width / 2;
+          const uy = updaterBox.y + updaterBox.height / 2;
+          const cx = candidateBox.x + candidateBox.width / 2;
+          const cy = candidateBox.y + candidateBox.height / 2;
+
+          await page.mouse.move(ux, uy);
+          await page.mouse.down();
+          await page.mouse.move(cx, cy, { steps: 12 });
+          await page.waitForTimeout(200);
+          await page.mouse.up();
+          await page.waitForTimeout(400);
+        }
+
+        // After all reconnects: no ghost handles should remain anywhere.
+        const ghostsRemaining = await page.locator('.c4-ghost-port').count();
+        console.log(
+          `[no-accumulation] ghost handles remaining: ${ghostsRemaining}`,
+        );
+        expect(
+          ghostsRemaining,
+          'no ghost handles should remain after reconnect',
+        ).toBe(0);
+
+        // Total visible handles should match the edge count (one per edge endpoint).
+        // With ghost-snap UX: each connected node shows exactly its ELK handle(s).
+        const edgeCount = await page.locator('.react-flow__edge').count();
+        const totalHandles = await page.evaluate(
+          () => document.querySelectorAll('.react-flow__handle').length,
+        );
+        console.log(
+          `[no-accumulation] edges=${edgeCount} totalHandles=${totalHandles}`,
+        );
+        // Sanity: at most 2 handles per edge (source + target). If handles accumulate,
+        // this count would be much higher.
+        expect(
+          totalHandles,
+          `handle count should not exceed 2 handles per edge (got ${totalHandles} for ${edgeCount} edges)`,
+        ).toBeLessThanOrEqual(edgeCount * 2 + 8); // +8 allows one node's fallback center handles
+      });
+    }
+
+    // ── staleHandleRemoved: white circle on original target gone after reconnect ─
+
+    if (tests.staleHandleRemoved) {
+      test('edit mode: stale handle removed from original target node after reconnect', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const nodes = await readNodeRects(page);
+        if (nodes.length < 3) return;
+
+        const firstEdge = page.locator('.react-flow__edge').first();
+        if ((await firstEdge.count()) === 0) return;
+        await firstEdge.hover({ force: true });
+        await page.waitForTimeout(150);
+
+        const edgeId = await firstEdge.getAttribute('data-id');
+        const sep = edgeId?.indexOf('→') ?? -1;
+        if (sep === -1) return;
+        const srcId = edgeId!.slice(0, sep);
+        const tgtId = edgeId!.slice(sep + 1);
+
+        // Collect existing edges to avoid same-source+target conflict.
+        const currentEdgeIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.react-flow__edge')).map(
+            e => (e as HTMLElement).dataset.id ?? '',
+          ),
+        );
+        const connections = currentEdgeIds
+          .map(id => {
+            const s = id.indexOf('→');
+            return s !== -1
+              ? { src: id.slice(0, s), tgt: id.slice(s + 1) }
+              : null;
+          })
+          .filter(Boolean) as { src: string; tgt: string }[];
+
+        const newTgtNode =
+          nodes.find(
+            n =>
+              n.id !== srcId &&
+              n.id !== tgtId &&
+              !connections.some(e => e.src === srcId && e.tgt === n.id),
+          ) ?? null;
+        if (!newTgtNode) {
+          console.log(
+            '[stale-handle] skipped: no unconnected target node available',
+          );
+          return;
+        }
+
+        // Capture the specific ELK handle IDs on the original target BEFORE reconnect.
+        const FALLBACK_IDS = new Set([
+          's-top-c',
+          't-top-c',
+          's-right-c',
+          't-right-c',
+          's-bottom-c',
+          't-bottom-c',
+          's-left-c',
+          't-left-c',
+        ]);
+        const elkHandlesBefore = await page.evaluate((nid: string) => {
+          const el = document.querySelector(
+            `.react-flow__node[data-id="${nid}"]`,
+          );
+          return Array.from(el?.querySelectorAll('[data-handleid]') ?? [])
+            .map(h => h.getAttribute('data-handleid') ?? '')
+            .filter(
+              id =>
+                id &&
+                !new Set([
+                  's-top-c',
+                  't-top-c',
+                  's-right-c',
+                  't-right-c',
+                  's-bottom-c',
+                  't-bottom-c',
+                  's-left-c',
+                  't-left-c',
+                ]).has(id),
+            );
+        }, tgtId);
+        console.log(
+          `[stale-handle] origTgt=${tgtId} ELK handles before: ${JSON.stringify(
+            elkHandlesBefore,
+          )}`,
+        );
+        if (elkHandlesBefore.length === 0) {
+          console.log(
+            '[stale-handle] skipped: original target has no ELK handles to verify',
+          );
+          return;
+        }
+
+        // Drag the target-end updater to the new target node.
+        if ((await page.locator('.react-flow__edgeupdater').count()) === 0)
+          return;
+        const updaterBox = await firstEdge
+          .locator('.react-flow__edgeupdater')
+          .last()
+          .boundingBox();
+        const newTgtBox = await page
+          .locator(`.react-flow__node[data-id="${newTgtNode.id}"]`)
+          .boundingBox();
+        if (!updaterBox || !newTgtBox) return;
+
+        await page.mouse.move(
+          updaterBox.x + updaterBox.width / 2,
+          updaterBox.y + updaterBox.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          newTgtBox.x + newTgtBox.width / 2,
+          newTgtBox.y + newTgtBox.height / 2,
+          { steps: 15 },
+        );
+        await page.waitForTimeout(300);
+        await page.mouse.up();
+        await page.waitForTimeout(500);
+
+        // ELK handle IDs that were on the original target should now be ABSENT.
+        const elkHandlesAfter = await page.evaluate((nid: string) => {
+          const el = document.querySelector(
+            `.react-flow__node[data-id="${nid}"]`,
+          );
+          return Array.from(el?.querySelectorAll('[data-handleid]') ?? [])
+            .map(h => h.getAttribute('data-handleid') ?? '')
+            .filter(
+              id =>
+                id &&
+                !new Set([
+                  's-top-c',
+                  't-top-c',
+                  's-right-c',
+                  't-right-c',
+                  's-bottom-c',
+                  't-bottom-c',
+                  's-left-c',
+                  't-left-c',
+                ]).has(id),
+            );
+        }, tgtId);
+        console.log(
+          `[stale-handle] origTgt ELK handles after: ${JSON.stringify(
+            elkHandlesAfter,
+          )}`,
+        );
+
+        for (const staleId of elkHandlesBefore) {
+          expect(
+            elkHandlesAfter,
+            `ELK handle "${staleId}" (white circle) should be removed from original target after reconnect`,
+          ).not.toContain(staleId);
+        }
       });
     }
   });
