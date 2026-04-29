@@ -45,12 +45,14 @@ const POSITION_MAP: Record<PortHandle['face'], Position> = {
  */
 function DynamicHandles({ portHandles }: { portHandles?: PortHandle[] }) {
   if (portHandles?.length) {
+    // Ghost active on this node → show only the ghost, hide static handles.
+    const hasGhost = portHandles.some(h => h.ghost);
+    const visible = hasGhost ? portHandles.filter(h => h.ghost) : portHandles;
     return (
       <>
-        {portHandles.map(h => {
+        {visible.map(h => {
           const isHorizontal = h.face === 'top' || h.face === 'bottom';
           const style: CSSProperties = {
-            ...HANDLE_STYLE,
             [isHorizontal ? 'left' : 'top']: `${h.fraction * 100}%`,
           };
           return (
@@ -59,6 +61,7 @@ function DynamicHandles({ portHandles }: { portHandles?: PortHandle[] }) {
               id={h.id}
               type={h.type}
               position={POSITION_MAP[h.face]}
+              className={h.ghost ? 'c4-ghost-port' : undefined}
               style={style}
             />
           );
