@@ -7,7 +7,6 @@
 
 import { diagramSuite, FULL } from './diagram-helpers';
 
-// Standard validations: render, no-passthrough, face-connect, handles, screenshots
 diagramSuite(
   'platform domain',
   '/c4/default/domain/platform',
