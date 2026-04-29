@@ -38,6 +38,7 @@ When edit mode is active:
 
 - All non-boundary nodes become draggable
 - After each drag, edges automatically reconnect to the closest available handle
+- Edge endpoints are draggable; dragging an endpoint near a node snaps a ghost port to the nearest face — releasing rewires the edge to that port
 - On exit, `recomputeEdgeSections` re-anchors all edges to final positions
 - Positions are persisted via the backend API
 
