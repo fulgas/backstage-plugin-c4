@@ -583,7 +583,17 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       ghostHandleRef.current = null;
 
       const hadGhost = !!ghostInfo;
-      const willManualReconnect = !succeeded && !!reconnecting && !!ghostInfo;
+      // Don't manual-reconnect when the ghost landed on the same node as the
+      // current endpoint — drag looped back, no topology change intended.
+      const ghostOnSameNode =
+        ghostInfo &&
+        reconnecting &&
+        ((reconnecting.ghostType === 'target' &&
+          ghostInfo.nodeId === edge.target) ||
+          (reconnecting.ghostType === 'source' &&
+            ghostInfo.nodeId === edge.source));
+      const willManualReconnect =
+        !succeeded && !!reconnecting && !!ghostInfo && !ghostOnSameNode;
 
       setFlow(prev => {
         if (!prev) return prev;
