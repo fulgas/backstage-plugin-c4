@@ -42,12 +42,13 @@ export function recomputeEdgeSections(layout: LayoutResult): LayoutResult {
     );
     usage.mark(e.source, sourceHandle, e.target, targetHandle);
 
-    // Keep existing sourceHandle/targetHandle so they continue to match the
-    // dynamic ELK port handle IDs rendered on nodes. Replacing them with
-    // HandleRouter IDs (e.g. "s-right-c") would break React Flow's handle
-    // registry lookup and cause edges to disappear in edit mode.
+    // Only set sourceHandle/targetHandle when not already present — existing IDs
+    // (dynamic ELK ports or ghost-promoted handles) must be preserved so React Flow's
+    // handle registry lookup stays valid and edges don't disappear in edit mode.
     return {
       ...e,
+      sourceHandle: e.sourceHandle ?? sourceHandle,
+      targetHandle: e.targetHandle ?? targetHandle,
       data: { ...(e.data as object), sections },
     };
   });

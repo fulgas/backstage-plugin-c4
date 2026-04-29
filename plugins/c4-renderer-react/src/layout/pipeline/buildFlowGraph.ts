@@ -23,14 +23,21 @@ export interface PortHandle {
   face: 'top' | 'bottom' | 'left' | 'right';
   /** 0–1 fraction along the face (0 = left/top edge, 1 = right/bottom edge). */
   fraction: number;
+  /** Temporary ghost port injected during edge reconnect drag; cleared on drop. */
+  ghost?: boolean;
 }
 
 const PORT_TOL = 18; // px tolerance for face detection
 
-/**
- * Given an ELK section endpoint and the node's canvas rect, return a PortHandle
- * describing which face and fraction the port sits on.
- */
+/** Canonical handle ID from type, face, and fraction. */
+export function portHandleId(
+  type: 'source' | 'target',
+  face: PortHandle['face'],
+  fraction: number,
+): string {
+  return `${type[0]}-${face}-${fraction.toFixed(3)}`;
+}
+
 function elkPointToPortHandle(
   pt: { x: number; y: number },
   rect: Rect,
@@ -44,7 +51,7 @@ function elkPointToPortHandle(
   if (Math.abs(pt.y - y) < PORT_TOL && inX) {
     const frac = clamp((pt.x - x) / w);
     return {
-      id: `${type[0]}-top-${frac.toFixed(3)}`,
+      id: portHandleId(type, 'top', frac),
       type,
       face: 'top',
       fraction: frac,
@@ -53,7 +60,7 @@ function elkPointToPortHandle(
   if (Math.abs(pt.y - (y + h)) < PORT_TOL && inX) {
     const frac = clamp((pt.x - x) / w);
     return {
-      id: `${type[0]}-bottom-${frac.toFixed(3)}`,
+      id: portHandleId(type, 'bottom', frac),
       type,
       face: 'bottom',
       fraction: frac,
@@ -62,7 +69,7 @@ function elkPointToPortHandle(
   if (Math.abs(pt.x - x) < PORT_TOL && inY) {
     const frac = clamp((pt.y - y) / h);
     return {
-      id: `${type[0]}-left-${frac.toFixed(3)}`,
+      id: portHandleId(type, 'left', frac),
       type,
       face: 'left',
       fraction: frac,
@@ -71,7 +78,7 @@ function elkPointToPortHandle(
   if (Math.abs(pt.x - (x + w)) < PORT_TOL && inY) {
     const frac = clamp((pt.y - y) / h);
     return {
-      id: `${type[0]}-right-${frac.toFixed(3)}`,
+      id: portHandleId(type, 'right', frac),
       type,
       face: 'right',
       fraction: frac,
