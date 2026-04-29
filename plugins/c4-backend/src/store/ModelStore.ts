@@ -176,9 +176,9 @@ export class ModelStore {
 
     let internalNodes: C4Node[];
     if (subjectDepth < 2) {
-      const rows = await this.db('c4_nodes').where({
-        parent_id: descriptor.subjectId,
-      });
+      const rows = await this.db('c4_nodes')
+        .where({ parent_id: descriptor.subjectId })
+        .orderBy('id');
       internalNodes = rows.map(this.rowToNode);
       // For landscape views, also pull systems that belong to subdomain children
       if (subjectDepth === 0) {
@@ -186,10 +186,9 @@ export class ModelStore {
           .filter((r: any) => r.depth === 0)
           .map((r: any) => r.id);
         if (subdomainIds.length > 0) {
-          const grandchildRows = await this.db('c4_nodes').whereIn(
-            'parent_id',
-            subdomainIds,
-          );
+          const grandchildRows = await this.db('c4_nodes')
+            .whereIn('parent_id', subdomainIds)
+            .orderBy('id');
           internalNodes = [
             ...internalNodes,
             ...grandchildRows.map(this.rowToNode),
@@ -198,10 +197,9 @@ export class ModelStore {
       }
     } else {
       // For component views: include depth-3 subcomponents if any exist
-      const subcomponentRows = await this.db('c4_nodes').where({
-        parent_id: descriptor.subjectId,
-        depth: 3,
-      });
+      const subcomponentRows = await this.db('c4_nodes')
+        .where({ parent_id: descriptor.subjectId, depth: 3 })
+        .orderBy('id');
       internalNodes =
         subcomponentRows.length > 0
           ? subcomponentRows.map(this.rowToNode)
@@ -210,13 +208,13 @@ export class ModelStore {
 
     const internalIds = new Set(internalNodes.map(n => n.id));
 
-    const relRows = await this.db('c4_relationships').where(
-      function whereRelated() {
+    const relRows = await this.db('c4_relationships')
+      .where(function whereRelated() {
         this.whereIn('source_id', [...internalIds]).orWhereIn('target_id', [
           ...internalIds,
         ]);
-      },
-    );
+      })
+      .orderBy('id');
     const allRelationships: C4Relationship[] = relRows.map((r: any) => ({
       id: r.id,
       sourceId: r.source_id,
@@ -236,9 +234,9 @@ export class ModelStore {
     let externalNodes: C4Node[] = [];
     const resolvedNodeIds = new Set<string>();
     if (externalCandidateIds.size > 0) {
-      const rows = await this.db('c4_nodes').whereIn('id', [
-        ...externalCandidateIds,
-      ]);
+      const rows = await this.db('c4_nodes')
+        .whereIn('id', [...externalCandidateIds])
+        .orderBy('id');
       externalNodes = rows.map(this.rowToNode);
       for (const n of externalNodes) resolvedNodeIds.add(n.id);
     }
@@ -248,7 +246,9 @@ export class ModelStore {
     );
     let externalActors: C4Actor[] = [];
     if (actorCandidateIds.length > 0) {
-      const rows = await this.db('c4_actors').whereIn('id', actorCandidateIds);
+      const rows = await this.db('c4_actors')
+        .whereIn('id', actorCandidateIds)
+        .orderBy('id');
       externalActors = rows.map(this.rowToActor);
     }
 
