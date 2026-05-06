@@ -290,6 +290,90 @@ export async function elkLayout(
     return result;
   }
 
+  // When a source/target approach segment runs within BEND_GAP of a subdomain boundary
+  // face, shiftBendsAwayFromBoundaries cannot fix it because the endpoint is fixed.
+  // Detect the hugging segment and insert a detour intermediate point to route clear.
+  // Only applied to subdomain boundaries (not the outer boundary) — external nodes are
+  // always outside the outer boundary, so the outer boundary never causes this issue.
+  function fixSegmentFaceHugs(
+    pts: { x: number; y: number }[],
+  ): { x: number; y: number }[] {
+    if (pts.length < 3) return pts; // need at least start, bend, end
+    // Skip the outer boundary (first entry in boundaryObstacles); only sub-domains matter.
+    const subdomainObstacles = boundaryObstacles.slice(1);
+    if (subdomainObstacles.length === 0) return pts;
+    const n = pts.length;
+
+    // Check the target-approach segment (pts[n-2] → pts[n-1]).
+    // pts[n-1] is the endpoint and cannot move; pts[n-2] can be relocated.
+    const c = pts[n - 2];
+    const d = pts[n - 1];
+
+    if (Math.abs(c.x - d.x) < 2) {
+      // Vertical segment at x ≈ c.x
+      const x = (c.x + d.x) / 2;
+      const minY = Math.min(c.y, d.y);
+      const maxY = Math.max(c.y, d.y);
+      for (const r of subdomainObstacles) {
+        const overlap = Math.min(maxY, r.y + r.h) - Math.max(minY, r.y);
+        if (overlap < FACE_MIN_OVERLAP) continue;
+        if (Math.abs(x - (r.x + r.w)) < BEND_GAP) {
+          const newX = r.x + r.w + BEND_GAP;
+          // Skip if the detour segment would hug the target node's own face.
+          if (Math.abs(newX - d.x) < FACE_TOL_NODE) continue;
+          // Hugging right face — detour to the right of the boundary.
+          const result = pts.slice(0, n - 1).map(p => ({ ...p }));
+          result[n - 2] = { x: newX, y: c.y };
+          result.push({ x: newX, y: d.y });
+          result.push({ ...d });
+          return result;
+        }
+        if (Math.abs(x - r.x) < BEND_GAP) {
+          const newX = r.x - BEND_GAP;
+          // Skip if the detour segment would hug the target node's own face.
+          if (Math.abs(newX - d.x) < FACE_TOL_NODE) continue;
+          // Hugging left face — detour to the left of the boundary.
+          const result = pts.slice(0, n - 1).map(p => ({ ...p }));
+          result[n - 2] = { x: newX, y: c.y };
+          result.push({ x: newX, y: d.y });
+          result.push({ ...d });
+          return result;
+        }
+      }
+    }
+
+    if (Math.abs(c.y - d.y) < 2) {
+      // Horizontal segment at y ≈ c.y
+      const y = (c.y + d.y) / 2;
+      const minX = Math.min(c.x, d.x);
+      const maxX = Math.max(c.x, d.x);
+      for (const r of subdomainObstacles) {
+        const overlap = Math.min(maxX, r.x + r.w) - Math.max(minX, r.x);
+        if (overlap < FACE_MIN_OVERLAP) continue;
+        if (Math.abs(y - (r.y + r.h)) < BEND_GAP) {
+          const newY = r.y + r.h + BEND_GAP;
+          if (Math.abs(newY - d.y) < FACE_TOL_NODE) continue;
+          const result = pts.slice(0, n - 1).map(p => ({ ...p }));
+          result[n - 2] = { x: c.x, y: newY };
+          result.push({ x: d.x, y: newY });
+          result.push({ ...d });
+          return result;
+        }
+        if (Math.abs(y - r.y) < BEND_GAP) {
+          const newY = r.y - BEND_GAP;
+          if (Math.abs(newY - d.y) < FACE_TOL_NODE) continue;
+          const result = pts.slice(0, n - 1).map(p => ({ ...p }));
+          result[n - 2] = { x: c.x, y: newY };
+          result.push({ x: d.x, y: newY });
+          result.push({ ...d });
+          return result;
+        }
+      }
+    }
+
+    return pts;
+  }
+
   const hrUsage = new HandleUsageTracker();
   const externalSections = new Map<string, ElkSection[]>();
   for (const [key, group] of edgeMap) {
@@ -344,7 +428,9 @@ export async function elkLayout(
 
     if (bestPts) {
       hrUsage.mark(sourceId, bestSrcH, targetId, bestTgtH);
-      const finalPts = shiftBendsAwayFromBoundaries(bestPts);
+      const finalPts = fixSegmentFaceHugs(
+        shiftBendsAwayFromBoundaries(bestPts),
+      );
       externalSections.set(key, [
         {
           startPoint: finalPts[0],
@@ -355,7 +441,72 @@ export async function elkLayout(
     }
   }
 
-  const mergedSections = new Map([...internalSections, ...externalSections]);
+  // Apply bend-shift and segment-detour corrections to ALL sections (including
+  // ELK-routed internal edges). ELK can route internal edges within tolerance of
+  // sub-domain boundary faces, which the test flags as hugging violations.
+  // Apply subdomain-only bend shift to ALL sections (internal ELK + external HandleRouter).
+  // ELK can route internal edges within tolerance of sub-domain boundary faces; shifting
+  // their Z-bends clears the faces. Only subdomain obstacles are shifted (not the outer
+  // boundary) so ELK's carefully computed positions are not disrupted.
+  const subdomainObstacles = boundaryObstacles.slice(1);
+  function shiftBendsAwayFromSubdomains(
+    pts: { x: number; y: number }[],
+  ): { x: number; y: number }[] {
+    if (subdomainObstacles.length === 0 || pts.length < 4) return pts;
+    const result = pts.map(p => ({ ...p }));
+    const p1 = result[1],
+      p2 = result[2];
+    if (Math.abs(p1.y - p2.y) < 2) {
+      let bendY = (p1.y + p2.y) / 2;
+      for (const r of subdomainObstacles) {
+        if (Math.abs(bendY - r.y) < BEND_GAP) {
+          bendY = r.y - BEND_GAP;
+          break;
+        }
+        if (Math.abs(bendY - (r.y + r.h)) < BEND_GAP) {
+          bendY = r.y + r.h + BEND_GAP;
+          break;
+        }
+      }
+      result[1] = { ...result[1], y: bendY };
+      result[2] = { ...result[2], y: bendY };
+    }
+    if (Math.abs(p1.x - p2.x) < 2) {
+      let bendX = (p1.x + p2.x) / 2;
+      for (const r of subdomainObstacles) {
+        if (Math.abs(bendX - r.x) < BEND_GAP) {
+          bendX = r.x - BEND_GAP;
+          break;
+        }
+        if (Math.abs(bendX - (r.x + r.w)) < BEND_GAP) {
+          bendX = r.x + r.w + BEND_GAP;
+          break;
+        }
+      }
+      result[1] = { ...result[1], x: bendX };
+      result[2] = { ...result[2], x: bendX };
+    }
+    return result;
+  }
+
+  // External sections were already post-processed (shiftBendsAwayFromBoundaries +
+  // fixSegmentFaceHugs) in the HandleRouter loop above. Only apply subdomain
+  // corrections to internal ELK-routed sections to avoid double-processing.
+  const mergedSections = new Map<string, ElkSection[]>([...externalSections]);
+  for (const [key, sections] of internalSections) {
+    mergedSections.set(
+      key,
+      sections.map(sec => {
+        const pts = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint];
+        const fixed = fixSegmentFaceHugs(shiftBendsAwayFromSubdomains(pts));
+        return {
+          startPoint: fixed[0],
+          bendPoints: fixed.slice(1, -1),
+          endPoint: fixed[fixed.length - 1],
+        };
+      }),
+    );
+  }
 
   const { flowNodes, flowEdges } = buildFlowGraph(
     classified,
