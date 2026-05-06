@@ -15,10 +15,10 @@ import {
   Controls,
   getNodesBounds,
   getViewportForBounds,
-  Position,
   ReactFlow,
   useReactFlow,
   useUpdateNodeInternals,
+  useViewport,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -35,6 +35,7 @@ import { BOUNDARY_PAD, NODE_H, NODE_W } from './c4Style';
 import { ElkEdge } from './edges/ElkEdge';
 import { elkLayout, recomputeEdgeSections } from './layout/elkLayout';
 import {
+  handleIdToPoint,
   orthogonalPath,
   resolveAbsolutePositions,
   type HandleFace,
@@ -49,17 +50,14 @@ import {
   InternalNode,
 } from './nodes/C4NodeTypes';
 
-const POSITION_TO_FACE: Record<Position, HandleFace> = {
-  [Position.Top]: 'top',
-  [Position.Right]: 'right',
-  [Position.Bottom]: 'bottom',
-  [Position.Left]: 'left',
-};
-
-/** Flow-coord position of the active ghost handle face. Updated synchronously in onDocMouseMove.
- *  Read by CustomConnectionLine so the reconnect dashed line snaps to the ghost face. */
+/** Flow-coord position of the active ghost handle face. Updated synchronously in onDocMouseMove. */
 const ghostFacePosRef: { current: { x: number; y: number } | null } = {
   current: null,
+};
+
+/** Current React Flow viewport transform — kept in sync by FlowBridge via useViewport(). */
+const viewportRef: { current: { x: number; y: number; zoom: number } } = {
+  current: { x: 0, y: 0, zoom: 1 },
 };
 
 /** Distance from point to nearest point on rect boundary. 0 = inside rect. */
@@ -109,57 +107,6 @@ function projectToFace(
   };
 }
 
-/** Dashed orthogonal path rendered during edge reconnect drag. Runs inside ReactFlow SVG layer.
- *  When a ghost handle is active, the endpoint snaps to the ghost face position. */
-function CustomConnectionLine({
-  fromX,
-  fromY,
-  toX,
-  toY,
-  fromPosition,
-}: {
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  fromPosition: Position;
-}) {
-  // Snap to the ghost face when available — gives the user visual feedback that
-  // the line will connect at the ghost port, not at the raw cursor position.
-  const ghostPos = ghostFacePosRef.current;
-  const endX = ghostPos ? ghostPos.x : toX;
-  const endY = ghostPos ? ghostPos.y : toY;
-  const srcFace: HandleFace = POSITION_TO_FACE[fromPosition] ?? 'right';
-  const horiz = srcFace === 'left' || srcFace === 'right';
-  const dx = endX - fromX;
-  const dy = endY - fromY;
-  let tgtFace: HandleFace;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    tgtFace = dx > 0 ? 'left' : 'right';
-  } else {
-    tgtFace = dy > 0 ? 'top' : 'bottom';
-  }
-  const { path } = orthogonalPath(
-    fromX,
-    fromY,
-    endX,
-    endY,
-    horiz,
-    srcFace,
-    tgtFace,
-  );
-  return (
-    <path
-      d={path}
-      fill="none"
-      strokeWidth={2}
-      stroke="var(--c4-color-active, #1976d2)"
-      strokeDasharray="6 3"
-      style={{ pointerEvents: 'none' }}
-    />
-  );
-}
-
 /** Runs inside the ReactFlow provider to expose internal APIs via refs. */
 function FlowBridge({
   screenToFlowRef,
@@ -174,8 +121,10 @@ function FlowBridge({
 }) {
   const { screenToFlowPosition } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
+  const viewport = useViewport();
   screenToFlowRef.current = screenToFlowPosition;
   updateNodeInternalsRef.current = updateNodeInternals;
+  viewportRef.current = viewport;
   return null;
 }
 
@@ -439,6 +388,11 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
   // Mirror of flow state for use inside document event listeners (avoids stale closure).
   const flowRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const lastMoveTimeRef = useRef(0);
+  // SVG overlay path — React state so clearing is atomic with isReconnecting=false.
+  const [overlayLinePath, setOverlayLinePath] = useState('');
+  // Fixed endpoint in flow coords for the overlay line; face of the fixed handle.
+  const reconnectFromFlowRef = useRef<{ x: number; y: number } | null>(null);
+  const reconnectFromFaceRef = useRef<HandleFace>('right');
 
   // Seed pendingPositions as soon as edit mode activates so save is always
   // available — user shouldn't have to drag something first.
@@ -453,6 +407,13 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         for (const n of flow.nodes) positions[n.id] = n.position;
         options?.onPositionsChange?.(positions);
       }
+      // Re-register all handles now that nodesConnectable=true (editMode). Handles are
+      // registered with their full bounds so getEdgePosition works during reconnect drag.
+      requestAnimationFrame(() => {
+        if (flow?.nodes.length) {
+          updateNodeInternalsRef.current?.(flow.nodes.map(n => n.id));
+        }
+      });
     }
     if (!editMode) {
       reconnectingRef.current = null;
@@ -573,6 +534,37 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       };
       reconnectSucceededRef.current = false;
       ghostFacePosRef.current = null;
+      // Capture edge path and fixed endpoint for the SVG overlay during drag.
+      // handleType='source' → source is fixed → sections[0].startPoint; else endPoint.
+      type ElkSec = {
+        startPoint: { x: number; y: number };
+        bendPoints?: { x: number; y: number }[];
+        endPoint: { x: number; y: number };
+      };
+      const sections = edge.data?.sections as ElkSec[] | undefined;
+      const fixedHandleId =
+        handleType === 'source' ? edge.sourceHandle : edge.targetHandle;
+      reconnectFromFaceRef.current =
+        (fixedHandleId?.split('-')?.[1] as HandleFace | undefined) ?? 'right';
+      if (sections?.[0]) {
+        reconnectFromFlowRef.current =
+          handleType === 'source'
+            ? sections[0].startPoint
+            : sections[0].endPoint;
+      } else {
+        // sections cleared (hasDragged=true): derive from live node positions.
+        const absPos = flowRef.current
+          ? resolveAbsolutePositions(flowRef.current.nodes)
+          : null;
+        const fixedNodeId = handleType === 'source' ? edge.source : edge.target;
+        const fixedPos = absPos?.get(fixedNodeId);
+        if (fixedPos && fixedHandleId) {
+          const rect = { x: fixedPos.x, y: fixedPos.y, w: NODE_W, h: NODE_H };
+          reconnectFromFlowRef.current = handleIdToPoint(fixedHandleId, rect);
+        } else {
+          reconnectFromFlowRef.current = null;
+        }
+      }
     },
     [],
   );
@@ -584,6 +576,8 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       _handleType: 'source' | 'target',
     ) => {
       setIsReconnecting(false);
+      setOverlayLinePath('');
+      reconnectFromFlowRef.current = null;
       const succeeded = reconnectSucceededRef.current;
       const reconnecting = reconnectingRef.current;
       reconnectSucceededRef.current = false;
@@ -827,6 +821,43 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         ghostFacePosRef.current = null;
       }
 
+      // Compute overlay line path; batched with setFlow below (React 18 native-listener batching).
+      const { x: tx, y: ty, zoom } = viewportRef.current;
+      const fromFlow = reconnectFromFlowRef.current;
+      let newOverlayD = '';
+      if (fromFlow) {
+        const fromSvg = {
+          x: fromFlow.x * zoom + tx,
+          y: fromFlow.y * zoom + ty,
+        };
+        const ghostFlow = ghostFacePosRef.current;
+        const toSvg = ghostFlow
+          ? { x: ghostFlow.x * zoom + tx, y: ghostFlow.y * zoom + ty }
+          : { x: flowPos.x * zoom + tx, y: flowPos.y * zoom + ty };
+        const srcFace = reconnectFromFaceRef.current;
+        const horiz = srcFace === 'left' || srcFace === 'right';
+        const dx = toSvg.x - fromSvg.x;
+        const dy = toSvg.y - fromSvg.y;
+        const tgtFace: HandleFace =
+          Math.abs(dx) > Math.abs(dy)
+            ? dx > 0
+              ? 'left'
+              : 'right'
+            : dy > 0
+            ? 'top'
+            : 'bottom';
+        newOverlayD = orthogonalPath(
+          fromSvg.x,
+          fromSvg.y,
+          toSvg.x,
+          toSvg.y,
+          horiz,
+          srcFace,
+          tgtFace,
+        ).path;
+      }
+      setOverlayLinePath(newOverlayD);
+
       setFlow(prev => {
         if (!prev) return prev;
 
@@ -898,7 +929,12 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
 
   return (
     <div
-      style={{ width: '100%', height: 'calc(100vh - 300px)', minHeight: 400 }}
+      style={{
+        width: '100%',
+        height: 'calc(100vh - 300px)',
+        minHeight: 400,
+        position: 'relative',
+      }}
       className={isReconnecting ? 'c4-reconnecting' : undefined}
     >
       {/* Remove React Flow's default white node background and visible handles */}
@@ -954,9 +990,7 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         onReconnect={handleReconnect}
         onReconnectStart={handleReconnectStart}
         onReconnectEnd={handleReconnectEnd}
-        connectionLineComponent={
-          editMode ? (CustomConnectionLine as any) : undefined
-        }
+        connectionLineComponent={undefined}
         onNodeDragStop={handleNodeDragStop}
         onNodeClick={(_e, node) => {
           if (editMode) return;
@@ -1029,6 +1063,29 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
           )}
         </Controls>
       </ReactFlow>
+      {isReconnecting && (
+        <svg
+          className="c4-reconnect-overlay"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            overflow: 'visible',
+            zIndex: 10,
+          }}
+        >
+          <path
+            d={overlayLinePath}
+            fill="none"
+            strokeWidth={2}
+            stroke="var(--c4-color-active, #1976d2)"
+            strokeDasharray="6 3"
+          />
+        </svg>
+      )}
     </div>
   );
 }
