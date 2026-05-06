@@ -346,6 +346,10 @@ export interface DiagramTests {
   staleHandleRemoved?: boolean;
   /** edgeUpdaterOnEndpoint — edge updater circles are co-located with edge path endpoints (±8px) */
   edgeUpdaterOnEndpoint?: boolean;
+  /** ghostPort — overlay SVG path (dashed connection line) appears on first AND second drag */
+  ghostPort?: boolean;
+  /** reconnectRepeat — drag same edge endpoint 10 times; edge and target port must persist */
+  reconnectRepeat?: boolean;
 }
 
 /** All structural tests. Use for diagrams with multiple nodes and at least one edge. */
@@ -375,6 +379,8 @@ export const FULL: DiagramTests = {
   singleGhostDot: true,
   staleHandleRemoved: true,
   edgeUpdaterOnEndpoint: true,
+  ghostPort: true,
+  reconnectRepeat: true,
 };
 
 /** Node + handle tests only. Use for diagrams with nodes but no cross-node edges. */
@@ -438,7 +444,9 @@ export function diagramSuite(
     tests.noHandleAccumulation ||
     tests.singleGhostDot ||
     tests.staleHandleRemoved ||
-    tests.edgeUpdaterOnEndpoint;
+    tests.edgeUpdaterOnEndpoint ||
+    tests.ghostPort ||
+    tests.reconnectRepeat;
 
   test.describe(suiteName, () => {
     test.beforeEach(async ({ page }) => {
@@ -1407,6 +1415,122 @@ export function diagramSuite(
       });
     }
 
+    // ── reconnect overlay: dashed SVG path visible on both first and second drag ──
+
+    if (tests.ghostPort) {
+      test('edit mode: overlay connection line appears on first and second drag', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const updaters = page.locator('.react-flow__edgeupdater');
+        if ((await updaters.count()) === 0) return;
+
+        const firstEdge = page.locator('.react-flow__edge').first();
+        const allNonBoundary = page.locator(
+          '.react-flow__node:not(.react-flow__node-boundary)',
+        );
+        const nonBndCount = await allNonBoundary.count();
+        if (nonBndCount < 2) return;
+
+        const ghostEdgeId = await firstEdge.getAttribute('data-id');
+        const ghostSep = ghostEdgeId?.indexOf('→') ?? -1;
+        if (ghostSep === -1) return;
+        const ghostTgtId = ghostEdgeId!.slice(ghostSep + 1);
+
+        let targetLocator = null;
+        for (let i = nonBndCount - 1; i >= 0; i--) {
+          const nId = await allNonBoundary.nth(i).getAttribute('data-id');
+          if (nId !== ghostTgtId) {
+            targetLocator = allNonBoundary.nth(i);
+            break;
+          }
+        }
+        if (!targetLocator) return;
+
+        async function doDrag() {
+          await firstEdge.hover({ force: true });
+          await page.waitForTimeout(80);
+          const updater = firstEdge.locator('.react-flow__edgeupdater').first();
+          if ((await updater.count()) === 0) return false;
+          await updater.hover({ force: true });
+          await page.waitForTimeout(40);
+          const updaterBox = await updater.boundingBox();
+          const nodeBox = await targetLocator!.boundingBox();
+          if (!updaterBox || !nodeBox) return false;
+          const nx = nodeBox.x + nodeBox.width / 2;
+          const ny = nodeBox.y + nodeBox.height / 2;
+          await page.mouse.down();
+          await page.mouse.move(nx, ny, { steps: 12 });
+          await page.waitForTimeout(200);
+          await page
+            .waitForFunction(() => !!document.querySelector('.c4-ghost-port'), {
+              timeout: 2000,
+            })
+            .catch(() => {});
+          return true;
+        }
+
+        // ── First drag ──
+        const ok1 = await doDrag();
+        if (!ok1) return;
+
+        const overlayD1 = await page.evaluate(() => {
+          const paths = document.querySelectorAll('.c4-reconnect-overlay path');
+          return Array.from(paths).map(p => p.getAttribute('d') ?? '');
+        });
+        console.log(`[overlay] first drag paths: ${JSON.stringify(overlayD1)}`);
+
+        await page.mouse.up();
+        await page.waitForTimeout(300);
+
+        // Overlay must be gone after drop.
+        const overlayAfter1 = await page
+          .locator('.c4-reconnect-overlay')
+          .count();
+        console.log(`[overlay] after first drop: ${overlayAfter1}`);
+
+        // ── Second drag ──
+        const ok2 = await doDrag();
+        if (!ok2) return;
+
+        const overlayD2 = await page.evaluate(() => {
+          const paths = document.querySelectorAll('.c4-reconnect-overlay path');
+          return Array.from(paths).map(p => p.getAttribute('d') ?? '');
+        });
+        console.log(
+          `[overlay] second drag paths: ${JSON.stringify(overlayD2)}`,
+        );
+
+        await page.mouse.up();
+        await page.waitForTimeout(300);
+
+        const overlayAfter2 = await page
+          .locator('.c4-reconnect-overlay')
+          .count();
+        console.log(`[overlay] after second drop: ${overlayAfter2}`);
+
+        // Both drags must have produced at least one non-empty overlay path.
+        const hasPath1 = overlayD1.some(d => d && d.length > 2);
+        const hasPath2 = overlayD2.some(d => d && d.length > 2);
+        expect(
+          hasPath1,
+          'overlay path must be non-empty during first drag',
+        ).toBe(true);
+        expect(
+          hasPath2,
+          'overlay path must be non-empty during second drag',
+        ).toBe(true);
+        expect(overlayAfter1, 'overlay SVG must unmount after first drop').toBe(
+          0,
+        );
+        expect(
+          overlayAfter2,
+          'overlay SVG must unmount after second drop',
+        ).toBe(0);
+      });
+    }
+
     // ── reconnectEdge: new port on new node, old port removed, endpoint on new face ──
 
     if (tests.reconnectEdge) {
@@ -2274,6 +2398,105 @@ export function diagramSuite(
           elkHandlesAfter.length,
           'original target should have fewer ELK handles after reconnect (stale handle pruned)',
         ).toBeLessThan(elkHandlesBefore.length);
+      });
+    }
+
+    // ── reconnectRepeat: 10 consecutive drag/drop cycles — edge and port survive ──
+
+    if (tests.reconnectRepeat) {
+      test('edit mode: edge and target port survive 10 consecutive drag/drop cycles', async ({
+        page,
+      }) => {
+        await enterEditMode(page);
+
+        const firstEdge = page.locator('.react-flow__edge').first();
+        if ((await firstEdge.count()) === 0) return;
+
+        const edgeId = await firstEdge.getAttribute('data-id');
+        if (!edgeId) return;
+
+        // Find a non-boundary node that is not the current edge target.
+        const sep = edgeId.indexOf('→');
+        const origTgtId = sep !== -1 ? edgeId.slice(sep + 1) : '';
+        const allNonBoundary = page.locator(
+          '.react-flow__node:not(.react-flow__node-boundary)',
+        );
+        const nonBndCount = await allNonBoundary.count();
+        if (nonBndCount < 2) return;
+
+        let targetLocator = null;
+        let targetId = '';
+        for (let i = nonBndCount - 1; i >= 0; i--) {
+          const nId = await allNonBoundary.nth(i).getAttribute('data-id');
+          if (nId && nId !== origTgtId) {
+            targetLocator = allNonBoundary.nth(i);
+            targetId = nId;
+            break;
+          }
+        }
+        if (!targetLocator || !targetId) return;
+
+        const nodeBox = await targetLocator.boundingBox();
+        if (!nodeBox) return;
+        const nx = nodeBox.x + nodeBox.width / 2;
+        const ny = nodeBox.y + nodeBox.height / 2;
+
+        const ITERATIONS = 10;
+        for (let i = 0; i < ITERATIONS; i++) {
+          // Re-hover the edge (its position may have shifted after reconnects).
+          const edge = page.locator('.react-flow__edge').first();
+          if ((await edge.count()) === 0) break;
+          await edge.hover({ force: true });
+          await page.waitForTimeout(60);
+
+          const updater = edge.locator('.react-flow__edgeupdater').first();
+          if ((await updater.count()) === 0) break;
+          await updater.hover({ force: true });
+          await page.waitForTimeout(30);
+
+          await page.mouse.down();
+          await page.mouse.move(nx, ny, { steps: 8 });
+          await page.waitForTimeout(150);
+          await page.mouse.up();
+          await page.waitForTimeout(200);
+
+          // Edge must still exist after every drop.
+          const edgesNow = await page.locator('.react-flow__edge').count();
+          console.log(`[repeat-drag] iter=${i + 1} edges=${edgesNow}`);
+          expect(
+            edgesNow,
+            `at least one edge must exist after iteration ${i + 1}`,
+          ).toBeGreaterThan(0);
+        }
+
+        // No ghost ports should linger after all drags settle.
+        await page.waitForTimeout(300);
+        const ghostCount = await page.locator('.c4-ghost-port').count();
+        console.log(`[repeat-drag] ghost ports remaining: ${ghostCount}`);
+        expect(ghostCount, 'no ghost ports should remain after 10 drags').toBe(
+          0,
+        );
+
+        // The overlay SVG must be gone.
+        const overlayCount = await page
+          .locator('.c4-reconnect-overlay')
+          .count();
+        expect(
+          overlayCount,
+          'overlay SVG must be unmounted after drag ends',
+        ).toBe(0);
+
+        // Target node must still have at least one handle (port was not destroyed).
+        const targetHandles = await page
+          .locator(
+            `.react-flow__node[data-id="${targetId}"] .react-flow__handle`,
+          )
+          .count();
+        console.log(`[repeat-drag] handles on target: ${targetHandles}`);
+        expect(
+          targetHandles,
+          'target node must retain at least one port handle after 10 reconnects',
+        ).toBeGreaterThan(0);
       });
     }
   });
