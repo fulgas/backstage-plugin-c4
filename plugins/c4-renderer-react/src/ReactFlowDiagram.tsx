@@ -56,6 +56,12 @@ const POSITION_TO_FACE: Record<Position, HandleFace> = {
   [Position.Left]: 'left',
 };
 
+/** Flow-coord position of the active ghost handle face. Updated synchronously in onDocMouseMove.
+ *  Read by CustomConnectionLine so the reconnect dashed line snaps to the ghost face. */
+const ghostFacePosRef: { current: { x: number; y: number } | null } = {
+  current: null,
+};
+
 /** Distance from point to nearest point on rect boundary. 0 = inside rect. */
 function distToRect(
   pt: { x: number; y: number },
@@ -103,7 +109,8 @@ function projectToFace(
   };
 }
 
-/** Dashed orthogonal path rendered during edge reconnect drag. Runs inside ReactFlow SVG layer. */
+/** Dashed orthogonal path rendered during edge reconnect drag. Runs inside ReactFlow SVG layer.
+ *  When a ghost handle is active, the endpoint snaps to the ghost face position. */
 function CustomConnectionLine({
   fromX,
   fromY,
@@ -117,10 +124,15 @@ function CustomConnectionLine({
   toY: number;
   fromPosition: Position;
 }) {
+  // Snap to the ghost face when available — gives the user visual feedback that
+  // the line will connect at the ghost port, not at the raw cursor position.
+  const ghostPos = ghostFacePosRef.current;
+  const endX = ghostPos ? ghostPos.x : toX;
+  const endY = ghostPos ? ghostPos.y : toY;
   const srcFace: HandleFace = POSITION_TO_FACE[fromPosition] ?? 'right';
   const horiz = srcFace === 'left' || srcFace === 'right';
-  const dx = toX - fromX;
-  const dy = toY - fromY;
+  const dx = endX - fromX;
+  const dy = endY - fromY;
   let tgtFace: HandleFace;
   if (Math.abs(dx) > Math.abs(dy)) {
     tgtFace = dx > 0 ? 'left' : 'right';
@@ -130,8 +142,8 @@ function CustomConnectionLine({
   const { path } = orthogonalPath(
     fromX,
     fromY,
-    toX,
-    toY,
+    endX,
+    endY,
     horiz,
     srcFace,
     tgtFace,
@@ -560,6 +572,7 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         ghostType: handleType === 'source' ? 'target' : 'source',
       };
       reconnectSucceededRef.current = false;
+      ghostFacePosRef.current = null;
     },
     [],
   );
@@ -581,6 +594,7 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
       // mousemove handler and cleared here before setFlow runs.
       const ghostInfo = ghostHandleRef.current;
       ghostHandleRef.current = null;
+      ghostFacePosRef.current = null;
 
       const hadGhost = !!ghostInfo;
       // Don't manual-reconnect when the ghost landed on the same node as the
@@ -609,8 +623,20 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         // Step 2: Add a promoted (non-ghost) handle to the reconnect target node
         // so the edge's handle ID stays registered in React Flow.
         if ((succeeded || willManualReconnect) && ghostNodeId && ghostHandle) {
+          // When the native reconnect succeeded, prev.edges already reflects the
+          // updated edge from handleReconnect. Use the actual new endpoint node so
+          // we promote to the correct node — ghostNodeId may lag due to React 18
+          // batching onDocMouseMove (native listener) after the React event batch.
+          const promotionNodeId = (() => {
+            if (!succeeded) return ghostNodeId;
+            const updatedEdge = prev.edges.find(e => e.id === edge.id);
+            if (!updatedEdge) return ghostNodeId;
+            return reconnecting?.ghostType === 'target'
+              ? updatedEdge.target
+              : updatedEdge.source;
+          })();
           nodes = nodes.map(n => {
-            if (n.id !== ghostNodeId) return n;
+            if (n.id !== promotionNodeId) return n;
             const ports =
               (n.data?.portHandles as PortHandle[] | undefined) ?? [];
             const promoted: PortHandle = { ...ghostHandle, ghost: false };
@@ -662,11 +688,55 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         // New Handle component mounted for the promoted ghost handle. RF's nodeLookup.handleBounds
         // is NOT updated automatically (ResizeObserver doesn't fire when node dimensions are
         // unchanged). Force an internals scan so EdgeWrapper can resolve the handle position.
-        const targetNodeId = ghostInfo.nodeId;
+        //
+        // internalsNodeId starts as ghostInfo.nodeId (correct for willManualReconnect).
+        // For succeeded=true, promotionNodeId inside setFlow uses updatedEdge.target/source
+        // which may differ from ghostInfo.nodeId when React 18 batching causes ghostHandleRef
+        // to lag. updateNodeInternalsNode captures the real promotion target so the rAF
+        // targets the node that actually received the handle.
+        const updateNodeInternalsNode = { current: ghostInfo.nodeId };
         requestAnimationFrame(() => {
-          updateNodeInternalsRef.current?.(targetNodeId);
+          updateNodeInternalsRef.current?.(updateNodeInternalsNode.current);
         });
+
+        if (succeeded) {
+          // For native reconnect, the promotion target is determined by updatedEdge, not
+          // ghostInfo. Queue a separate setFlow (reads the already-updated edges from the
+          // preceding setFlow) to capture the actual target node ID.
+          setFlow(prev => {
+            if (!prev) return prev;
+            const updatedEdge = prev.edges.find(e => e.id === edge.id);
+            if (updatedEdge) {
+              updateNodeInternalsNode.current =
+                reconnecting?.ghostType === 'target'
+                  ? updatedEdge.target
+                  : updatedEdge.source;
+            }
+            return prev;
+          });
+        }
       }
+
+      // Deferred ghost cleanup: onDocMouseMove is a native DOM listener batched separately
+      // from React event handlers. React 18 may process the handleReconnectEnd setFlow
+      // (React batch) before the pending onDocMouseMove setFlow (native batch) runs,
+      // leaving an orphaned ghost handle on a node. A nested requestAnimationFrame
+      // fires after React has flushed all pending batches (including the native batch),
+      // guaranteeing a clean ghost-free state.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setFlow(prev => {
+            if (!prev) return prev;
+            const hasGhosts = prev.nodes.some(n =>
+              (n.data?.portHandles as PortHandle[] | undefined)?.some(
+                h => h.ghost,
+              ),
+            );
+            if (!hasGhosts) return prev;
+            return { ...prev, nodes: stripGhostHandles(prev.nodes) };
+          });
+        });
+      });
 
       if (succeeded || hadGhost) {
         hasDraggedRef.current = true;
@@ -719,6 +789,43 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
         bestNodeId && bestHandle
           ? { nodeId: bestNodeId, handle: bestHandle }
           : null;
+
+      // Compute the ghost face position in flow coords so CustomConnectionLine
+      // can snap the dashed reconnect line to the ghost port face.
+      if (bestNodeId && bestHandle) {
+        const bestPos = absPos.get(bestNodeId);
+        if (bestPos) {
+          const bx = bestPos.x;
+          const by = bestPos.y;
+          switch (bestHandle.face) {
+            case 'top':
+              ghostFacePosRef.current = {
+                x: bx + NODE_W * bestHandle.fraction,
+                y: by,
+              };
+              break;
+            case 'bottom':
+              ghostFacePosRef.current = {
+                x: bx + NODE_W * bestHandle.fraction,
+                y: by + NODE_H,
+              };
+              break;
+            case 'left':
+              ghostFacePosRef.current = {
+                x: bx,
+                y: by + NODE_H * bestHandle.fraction,
+              };
+              break;
+            default:
+              ghostFacePosRef.current = {
+                x: bx + NODE_W,
+                y: by + NODE_H * bestHandle.fraction,
+              };
+          }
+        }
+      } else {
+        ghostFacePosRef.current = null;
+      }
 
       setFlow(prev => {
         if (!prev) return prev;
