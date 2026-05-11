@@ -1,0 +1,11 @@
+site_name: Inventory System
+site_description: Architecture docs for the Inventory system
+docs_dir: docs
+nav:
+  - Overview: index.md
+  - Architecture: architecture.md
+plugins:
+  - techdocs-core
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences

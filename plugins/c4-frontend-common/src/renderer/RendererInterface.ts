@@ -35,6 +35,20 @@ export interface C4RenderOptions {
   onCancelEdit?: () => void;
   /** Whether Save Layout is enabled (positions have been dragged). */
   canSave?: boolean;
+  /**
+   * When true, all edit controls (Edit Layout, direction buttons, download) are
+   * hidden. Use for read-only embeds such as TechDocs pages.
+   */
+  readOnly?: boolean;
+  /**
+   * When set alongside `captureContainerEl`, fires once with a PNG data URL
+   * after all nodes have been measured. Used by static embeds (e.g. TechDocs)
+   * that render the diagram off-screen and show the resulting image.
+   */
+  onCapture?: (dataUrl: string) => void;
+  /** The container element that holds the off-screen ReactFlow instance.
+   *  Required so AutoCapture can scope its `.react-flow__viewport` query. */
+  captureContainerEl?: HTMLElement;
 }
 
 /**

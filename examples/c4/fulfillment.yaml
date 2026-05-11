@@ -18,6 +18,8 @@ metadata:
   name: inventory
   description: Tracks stock levels, warehouse locations, and replenishment
   tags: [c4]
+  annotations:
+    backstage.io/techdocs-ref: dir:inventory-docs
 spec:
   owner: guests
   domain: fulfillment
