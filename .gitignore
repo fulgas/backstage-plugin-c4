@@ -66,3 +66,8 @@ e2e/.auth-state.json
 .yarn/install-state.gz
 .superpowers/
 *.tsbuildinfo
+mise.toml
+
+# Python cache
+__pycache__/
+*.pyc

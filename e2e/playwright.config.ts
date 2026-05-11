@@ -23,6 +23,8 @@ export default defineConfig({
     'system-payment-processing.spec.ts',
     'system-shipping.spec.ts',
     'system-storefront.spec.ts',
+    // TechDocs + C4 addon integration
+    'techdocs-inventory.spec.ts',
     // Component context diagrams
     'component-analytics-api.spec.ts',
     'component-auth-admin-ui.spec.ts',
@@ -56,6 +58,9 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1400, height: 900 },
   },
-  reporter: [['html', { open: 'never', outputFolder: 'playwright-report' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],
+  ],
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

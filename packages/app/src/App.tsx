@@ -31,6 +31,7 @@ import { ReportIssue } from '@backstage/plugin-techdocs-module-addons-contrib';
 import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
 import { UserSettingsPage } from '@backstage/plugin-user-settings';
 import { C4DiagramPage, C4IndexPage } from '@fulgas/plugin-c4-frontend-legacy';
+import { C4DiagramAddon } from '@fulgas/plugin-c4-techdocs-addon';
 import { Navigate, Route } from 'react-router-dom';
 import { apis } from './apis';
 import { entityPage } from './components/catalog/EntityPage';
@@ -78,6 +79,7 @@ const routes = (
     >
       <TechDocsAddons>
         <ReportIssue />
+        <C4DiagramAddon />
       </TechDocsAddons>
     </Route>
     <Route path="/create" element={<ScaffolderPage />} />

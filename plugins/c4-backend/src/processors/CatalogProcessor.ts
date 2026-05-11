@@ -311,7 +311,13 @@ export class CatalogProcessor {
 }
 
 function sanitize(ref: string): string {
-  return ref.replace(/[^a-zA-Z0-9]/g, '_');
+  // "component:default/inventory_service" → "component-default-inventory_service"
+  // Colon and slash become hyphens so the kind/namespace/name parts are readable;
+  // other non-alphanumeric chars (except hyphens and underscores) become underscores.
+  return ref
+    .replace(':', '-')
+    .replace('/', '-')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 function resolveRootDomain(

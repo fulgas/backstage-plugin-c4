@@ -16,6 +16,7 @@ import {
   getNodesBounds,
   getViewportForBounds,
   ReactFlow,
+  useNodesInitialized,
   useReactFlow,
   useUpdateNodeInternals,
   useViewport,
@@ -227,6 +228,92 @@ function DownloadButton({ title }: { title: string }) {
       <RiDownloadLine size={16} />
     </ControlButton>
   );
+}
+
+/**
+ * Renders nothing but fires `onCapture(dataUrl)` once after all nodes are
+ * measured by React Flow's resize observer. Used by C4DiagramEmbed to produce
+ * a static PNG for TechDocs without any shadow DOM complexity.
+ */
+function AutoCapture({
+  containerEl,
+  onCapture,
+}: {
+  containerEl: HTMLElement;
+  onCapture: (dataUrl: string) => void;
+}) {
+  // Use the hook version of getNodesBounds — it receives nodeLookup internally
+  // so it returns bounds based on positionAbsolute (correct for sub-flows).
+  // The plain import uses node.position which is RELATIVE for child nodes.
+  const { getNodes, getNodesBounds: rfGetNodesBounds } = useReactFlow();
+  const initialized = useNodesInitialized();
+  const firedRef = useRef(false);
+
+  // Stable refs so the effect only re-fires when `initialized` changes.
+  // React Flow toggles `initialized` during ELK layout; if we included getNodes
+  // or onCapture in deps the effect cleanup would cancel the RAF and leave the
+  // capture permanently incomplete (firedRef is already true, blocking retry).
+  const getNodesRef = useRef(getNodes);
+  getNodesRef.current = getNodes;
+  const rfGetNodesBoundsRef = useRef(rfGetNodesBounds);
+  rfGetNodesBoundsRef.current = rfGetNodesBounds;
+  const containerElRef = useRef(containerEl);
+  containerElRef.current = containerEl;
+  const onCaptureRef = useRef(onCapture);
+  onCaptureRef.current = onCapture;
+
+  useEffect(() => {
+    if (!initialized || firedRef.current) return;
+    const nodes = getNodesRef.current();
+    if (!nodes.length) return;
+
+    firedRef.current = true;
+
+    // Two animation frames so React Flow finishes painting node content.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const nodesSized = getNodesRef.current();
+        if (!nodesSized.length) return;
+
+        const bounds = rfGetNodesBoundsRef.current(nodesSized);
+        const W = Math.max(bounds.width + 80, 400);
+        const H = Math.max(bounds.height + 80, 300);
+        const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 40);
+        const el = containerElRef.current.querySelector(
+          '.react-flow__viewport',
+        ) as HTMLElement | null;
+        if (!el) return;
+
+        import('html-to-image').then(({ toPng }) =>
+          toPng(el, {
+            backgroundColor: '#ffffff',
+            width: W,
+            height: H,
+            // Skip font embedding: external @font-face URLs can hang indefinitely
+            // in html-to-image's fetch loop when accessed from a portal context.
+            skipFonts: true,
+            style: {
+              width: `${W}px`,
+              height: `${H}px`,
+              transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+              // Prevent will-change:transform from blocking canvas rendering inside
+              // the SVG foreignObject that html-to-image creates internally.
+              willChange: 'auto',
+            },
+          })
+            .then(dataUrl => onCaptureRef.current(dataUrl))
+            .catch(err => {
+              // eslint-disable-next-line no-console
+              console.error('[AutoCapture] toPng failed:', err);
+            }),
+        );
+        // Intentionally no RAF cleanup: React Flow toggles `initialized` during
+        // layout, so effect re-fires would otherwise cancel an in-progress capture.
+      });
+    });
+  }, [initialized]); // stable refs used above; only re-fire on initialized change
+
+  return null;
 }
 
 /** Override node positions with saved values; sections are cleared so recomputeEdgeSections can rebuild them from the new positions. */
@@ -442,8 +529,14 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
   });
 
   const handleNodesChange = (changes: NodeChange[]) => {
-    if (!editMode) return;
-    const hasPositionChange = changes.some(
+    // Dimension changes must always be applied: they come from React Flow's
+    // ResizeObserver and populate measured.width/height in the store, which
+    // useNodesInitialized() requires. Without this, AutoCapture never fires.
+    const effectiveChanges = editMode
+      ? changes
+      : changes.filter(c => c.type === 'dimensions');
+    if (!effectiveChanges.length) return;
+    const hasPositionChange = effectiveChanges.some(
       c => c.type === 'position' || c.type === 'dimensions',
     );
     // Only count active drags (dragging: true) — React Flow also fires position
@@ -458,7 +551,7 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
     }
     setFlow(prev => {
       if (!prev) return prev;
-      const nodes = applyNodeChanges(changes, prev.nodes);
+      const nodes = applyNodeChanges(effectiveChanges, prev.nodes);
       if (hasPositionChange) {
         const positions: Record<string, { x: number; y: number }> = {};
         for (const n of nodes) positions[n.id] = n.position;
@@ -1005,9 +1098,17 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
           screenToFlowRef={screenToFlowRef}
           updateNodeInternalsRef={updateNodeInternalsRef}
         />
+        {options?.onCapture && options.captureContainerEl && (
+          <AutoCapture
+            containerEl={options.captureContainerEl}
+            onCapture={options.onCapture}
+          />
+        )}
         <Controls showInteractive={false}>
-          <DownloadButton title={diagram.descriptor.title} />
-          {editMode ? (
+          {!options?.readOnly && (
+            <DownloadButton title={diagram.descriptor.title} />
+          )}
+          {!options?.readOnly && editMode ? (
             <>
               <ControlButton
                 title="Auto layout (ELK decides direction)"
@@ -1054,12 +1155,14 @@ export function ReactFlowDiagram({ diagram, options }: Props) {
               </ControlButton>
             </>
           ) : (
-            <ControlButton
-              title="Edit Layout"
-              onClick={options?.onEnterEditMode}
-            >
-              <RiPencilLine size={16} />
-            </ControlButton>
+            !options?.readOnly && (
+              <ControlButton
+                title="Edit Layout"
+                onClick={options?.onEnterEditMode}
+              >
+                <RiPencilLine size={16} />
+              </ControlButton>
+            )
           )}
         </Controls>
       </ReactFlow>
